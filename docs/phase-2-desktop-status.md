@@ -20,6 +20,7 @@
 12. Added downloadable support bundle endpoint for diagnostics (app logs + audit logs + LAN/activation snapshot).
 13. Hardened business data isolation for customer/product/quotation APIs, including quotation conversion/export/PDF/bulk-delete flows with business-aware safeguards.
 14. Hardened invoice and sales APIs with business-aware filters/inserts for list/export/PDF/bulk actions, invoice updates, sales create/update, and related stock/payment writes.
+15. Scoped product support endpoints (search, import/export, low-stock, bulk delete, product detail updates) to business context with mixed-schema fallback handling.
 
 ## Pending (Next phase)
 1. Install/verify Rust toolchain and run actual Tauri builds on Windows.

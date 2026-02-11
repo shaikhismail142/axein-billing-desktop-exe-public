@@ -1,9 +1,28 @@
 // app/api/products/export/route.ts
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
+import { getRequestBusinessId } from "@/app/lib/platform-context";
+
+async function hasProductBusinessColumn() {
+  try {
+    const rs = await pool.query(
+      `SELECT 1
+         FROM information_schema.columns
+        WHERE table_schema='public'
+          AND table_name='products'
+          AND column_name='business_id'
+        LIMIT 1`
+    );
+    return (rs.rowCount || 0) > 0;
+  } catch {
+    return false;
+  }
+}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const businessId = getRequestBusinessId(req, 1);
+  const scoped = await hasProductBusinessColumn();
   const q = (url.searchParams.get("q") || "").trim();
   const category = (url.searchParams.get("category") || "").trim();
   const lowOnly = (url.searchParams.get("low") || "").trim() === "1";
@@ -16,7 +35,10 @@ export async function GET(req: Request) {
     : [];
 
   const where: string[] = [];
-  const params: any[] = [];
+  const params: any[] = scoped ? [businessId] : [];
+  if (scoped) {
+    where.push(`p.business_id = $1`);
+  }
 
   if (ids.length) {
     params.push(ids);

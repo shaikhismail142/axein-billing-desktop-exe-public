@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/lib/platform-context";
 
 /** Minimal CSV parser: supports quoted fields, commas, and newlines in quotes. */
 function parseCSV(text: string): string[][] {
@@ -75,47 +76,98 @@ type MetaPatch = {
   exp_date?: string;
 };
 
-async function fetchByName(name: string) {
+async function hasProductBusinessColumn() {
+  try {
+    const rs = await pool.query(
+      `SELECT 1
+         FROM information_schema.columns
+        WHERE table_schema='public'
+          AND table_name='products'
+          AND column_name='business_id'
+        LIMIT 1`
+    );
+    return (rs.rowCount || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchByName(name: string, businessId: number, scoped: boolean) {
   const rs = await pool.query(
-    `SELECT id, name, meta FROM products WHERE LOWER(name)=LOWER($1) LIMIT 1`,
-    [name]
+    `SELECT id, name, meta
+       FROM products
+      WHERE LOWER(name)=LOWER($1)${scoped ? " AND business_id = $2" : ""}
+      LIMIT 1`,
+    scoped ? [name, businessId] : [name]
   );
   return rs.rows[0] as { id: number; name: string; meta: any } | undefined;
 }
 
-async function insertProduct(name: string, meta: Record<string, any>) {
+async function insertProduct(name: string, meta: Record<string, any>, businessId: number, scoped: boolean) {
   const category = meta.category ?? null;
   try {
-    await pool.query(
-      `INSERT INTO products (name, category, meta) VALUES ($1, $2, $3::jsonb)`,
-      [name, category, JSON.stringify(meta)]
-    );
+    if (scoped) {
+      await pool.query(
+        `INSERT INTO products (business_id, name, category, meta) VALUES ($1, $2, $3, $4::jsonb)`,
+        [businessId, name, category, JSON.stringify(meta)]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO products (name, category, meta) VALUES ($1, $2, $3::jsonb)`,
+        [name, category, JSON.stringify(meta)]
+      );
+    }
   } catch {
-    await pool.query(
-      `INSERT INTO products (name, meta) VALUES ($1, $2::jsonb)`,
-      [name, JSON.stringify(meta)]
-    );
+    if (scoped) {
+      await pool.query(
+        `INSERT INTO products (business_id, name, meta) VALUES ($1, $2, $3::jsonb)`,
+        [businessId, name, JSON.stringify(meta)]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO products (name, meta) VALUES ($1, $2::jsonb)`,
+        [name, JSON.stringify(meta)]
+      );
+    }
   }
 }
 
-async function updateProductMeta(id: number, patch: Record<string, any>) {
-  const rs = await pool.query(`SELECT meta FROM products WHERE id=$1`, [id]);
+async function updateProductMeta(id: number, patch: Record<string, any>, businessId: number, scoped: boolean) {
+  const rs = await pool.query(
+    `SELECT meta FROM products WHERE id=$1${scoped ? " AND business_id = $2" : ""}`,
+    scoped ? [id, businessId] : [id]
+  );
   if (rs.rowCount === 0) return;
   const merged = { ...(rs.rows[0].meta || {}), ...patch };
   try {
-    await pool.query(`UPDATE products SET meta=$2::jsonb, updated_at=now() WHERE id=$1`, [id, JSON.stringify(merged)]);
+    await pool.query(
+      `UPDATE products
+          SET meta=$2::jsonb, updated_at=now()
+        WHERE id=$1${scoped ? " AND business_id = $3" : ""}`,
+      scoped ? [id, JSON.stringify(merged), businessId] : [id, JSON.stringify(merged)]
+    );
   } catch {
-    await pool.query(`UPDATE products SET meta=$2::jsonb WHERE id=$1`, [id, JSON.stringify(merged)]);
+    await pool.query(
+      `UPDATE products
+          SET meta=$2::jsonb
+        WHERE id=$1${scoped ? " AND business_id = $3" : ""}`,
+      scoped ? [id, JSON.stringify(merged), businessId] : [id, JSON.stringify(merged)]
+    );
   }
   if (patch.category !== undefined) {
     try {
-      await pool.query(`UPDATE products SET category=$2 WHERE id=$1`, [id, patch.category]);
+      await pool.query(
+        `UPDATE products SET category=$2 WHERE id=$1${scoped ? " AND business_id = $3" : ""}`,
+        scoped ? [id, patch.category, businessId] : [id, patch.category]
+      );
     } catch {}
   }
 }
 
 export async function POST(req: Request) {
   try {
+    const businessId = getRequestBusinessId(req, 1);
+    const scoped = await hasProductBusinessColumn();
     const ct = req.headers.get("content-type") || "";
     if (!ct.includes("multipart/form-data")) {
       return NextResponse.json({ error: "Upload a CSV file (multipart/form-data)" }, { status: 400 });
@@ -190,13 +242,13 @@ export async function POST(req: Request) {
       const notes = str(row[iNotes]); if (notes !== undefined) patch.notes = notes;
       const exp = str(row[iExp]); if (exp !== undefined) patch.exp_date = exp;
 
-      const existing = await fetchByName(name);
+      const existing = await fetchByName(name, businessId, scoped);
       if (existing) {
-        await updateProductMeta(existing.id, patch);
+        await updateProductMeta(existing.id, patch, businessId, scoped);
         updated++;
       } else {
         const meta: Record<string, any> = { ...patch };
-        await insertProduct(name, meta);
+        await insertProduct(name, meta, businessId, scoped);
         created++;
       }
     }

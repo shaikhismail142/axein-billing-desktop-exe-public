@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db"; // change to "@/lib/db" if that's your real path
+import { getRequestBusinessId } from "@/app/lib/platform-context";
 
 function n(v: unknown) {
   if (v === null || v === undefined || v === "") return undefined;
@@ -24,9 +25,30 @@ function resolveOrigin(req: Request) {
   return origin;
 }
 
-async function readMeta(id: number) {
+async function hasProductBusinessColumn() {
   try {
-    const r = await pool.query(`SELECT id, name, meta, category, created_at, updated_at FROM products WHERE id=$1`, [id]);
+    const rs = await pool.query(
+      `SELECT 1
+         FROM information_schema.columns
+        WHERE table_schema='public'
+          AND table_name='products'
+          AND column_name='business_id'
+        LIMIT 1`
+    );
+    return (rs.rowCount || 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function readMetaScoped(id: number, businessId: number, scoped: boolean) {
+  try {
+    const r = await pool.query(
+      `SELECT id, name, meta, category, created_at, updated_at
+         FROM products
+        WHERE id=$1${scoped ? " AND business_id = $2" : ""}`,
+      scoped ? [id, businessId] : [id]
+    );
     if (r.rowCount === 0) return null;
     return r.rows[0] as {
       id: number;
@@ -37,7 +59,12 @@ async function readMeta(id: number) {
       updated_at?: string | null;
     };
   } catch {
-    const r = await pool.query(`SELECT id, name, meta, category, created_at FROM products WHERE id=$1`, [id]);
+    const r = await pool.query(
+      `SELECT id, name, meta, category, created_at
+         FROM products
+        WHERE id=$1${scoped ? " AND business_id = $2" : ""}`,
+      scoped ? [id, businessId] : [id]
+    );
     if (r.rowCount === 0) return null;
     return r.rows[0] as {
       id: number;
@@ -49,25 +76,43 @@ async function readMeta(id: number) {
     };
   }
 }
-async function writeMeta(id: number, patch: Record<string, any>, opts?: { name?: string }) {
-  const cur = await readMeta(id);
+async function writeMeta(
+  id: number,
+  patch: Record<string, any>,
+  businessId: number,
+  scoped: boolean,
+  opts?: { name?: string }
+) {
+  const cur = await readMetaScoped(id, businessId, scoped);
   if (!cur) return null;
   const next = { ...(cur.meta || {}), ...patch };
   const nextName = opts?.name ?? cur.name;
   try {
-    await pool.query(`UPDATE products SET name=$2, meta=$3::jsonb, updated_at=now() WHERE id=$1`, [id, nextName, JSON.stringify(next)]);
+    await pool.query(
+      `UPDATE products
+          SET name=$2, meta=$3::jsonb, updated_at=now()
+        WHERE id=$1${scoped ? " AND business_id = $4" : ""}`,
+      scoped ? [id, nextName, JSON.stringify(next), businessId] : [id, nextName, JSON.stringify(next)]
+    );
   } catch {
-    await pool.query(`UPDATE products SET name=$2, meta=$3::jsonb WHERE id=$1`, [id, nextName, JSON.stringify(next)]);
+    await pool.query(
+      `UPDATE products
+          SET name=$2, meta=$3::jsonb
+        WHERE id=$1${scoped ? " AND business_id = $4" : ""}`,
+      scoped ? [id, nextName, JSON.stringify(next), businessId] : [id, nextName, JSON.stringify(next)]
+    );
   }
-  return readMeta(id);
+  return readMetaScoped(id, businessId, scoped);
 }
 
 // GET /api/products/:id
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
+  const businessId = getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
 
-  const row = await readMeta(id);
+  const scoped = await hasProductBusinessColumn();
+  const row = await readMetaScoped(id, businessId, scoped);
   if (!row) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
   const m = row.meta || {};
@@ -95,8 +140,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 // PATCH /api/products/:id
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
+  const businessId = getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
 
+  const scoped = await hasProductBusinessColumn();
   const body = await req.json().catch(() => ({}));
   const patch: Record<string, any> = {};
   const name = s(body.name);
@@ -141,13 +188,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ ok: true, message: "nothing to update" });
   }
 
-  const updated = await writeMeta(id, patch, { name });
+  const updated = await writeMeta(id, patch, businessId, scoped, { name });
   if (!updated) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
   // Best-effort sync to column if it exists
   if (category !== undefined) {
     try {
-      await pool.query(`UPDATE products SET category=$2 WHERE id=$1`, [id, category]);
+      await pool.query(
+        `UPDATE products SET category=$2 WHERE id=$1${scoped ? " AND business_id = $3" : ""}`,
+        scoped ? [id, category, businessId] : [id, category]
+      );
     } catch {}
   }
 
@@ -168,7 +218,9 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
   }
 
   const id = Number(ctx.params.id);
+  const businessId = getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
+  const scoped = await hasProductBusinessColumn();
 
   const patch: Record<string, any> = {};
   const low = n(form.get("low_stock_threshold"));
@@ -183,12 +235,15 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
   if (expDate !== undefined) patch.exp_date = expDate;
 
   try {
-    const updated = await writeMeta(id, patch, { name: s(form.get("name")) });
+    const updated = await writeMeta(id, patch, businessId, scoped, { name: s(form.get("name")) });
     if (!updated) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
     if (category !== undefined) {
       try {
-        await pool.query(`UPDATE products SET category=$2 WHERE id=$1`, [id, category]);
+        await pool.query(
+          `UPDATE products SET category=$2 WHERE id=$1${scoped ? " AND business_id = $3" : ""}`,
+          scoped ? [id, category, businessId] : [id, category]
+        );
       } catch {}
     }
     const returnTo = s(form.get("return_to"));
