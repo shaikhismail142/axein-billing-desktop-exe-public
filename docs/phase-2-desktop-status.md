@@ -25,6 +25,7 @@
 17. Hardened inventory stock APIs (batches, adjustments, stock adjust, inventory settings/expiry) with RBAC gates and business-aware scoping in both route and stock service layers.
 18. Hardened accounting/support APIs (debts, alerts, categories, legacy expiry, generic settings) with permission checks and business-aware data filtering/upserts.
 19. Strengthened admin/support endpoints by adding RBAC-backed backup/restore access controls, business-scoped backup exports, and business-isolated logo upload paths.
+20. Hardened license mutation endpoints (verify key, start trial, toggle trial, deactivate) with explicit license/settings permission checks and business mismatch safeguards.
 
 ## Pending (Next phase)
 1. Install/verify Rust toolchain and run actual Tauri builds on Windows.

@@ -4,12 +4,16 @@ import {
   saveActivationRecord,
   getActivationStatus,
 } from "@/app/lib/license-activation";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function POST(req: Request) {
   try {
+    const access = await requireAnyPermission(req, ["perm.license.manage", "perm.settings.manage"], "Forbidden");
+    if (!access.ok) return access.response;
+
     const body = (await req.json().catch(() => ({}))) as { enabled?: boolean };
 
     const current = (await getActivationRecord()) ?? null;

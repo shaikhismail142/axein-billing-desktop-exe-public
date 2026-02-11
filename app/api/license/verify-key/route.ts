@@ -6,6 +6,7 @@ import {
   type LicensePayload,
 } from "@/app/lib/license-activation";
 import { pool } from "@/lib/db";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 function bad(msg: string, status = 400) {
   return NextResponse.json(
@@ -52,6 +53,10 @@ export const revalidate = 0;
 
 export async function POST(req: Request) {
   try {
+    const access = await requireAnyPermission(req, ["perm.license.manage", "perm.settings.manage"], "Forbidden");
+    if (!access.ok) return access.response;
+    const businessId = access.ctx.businessId;
+
     const body = await req.json().catch(() => ({} as any));
 
     // --- Normalize inputs from multiple shapes ----------------------------
@@ -155,7 +160,10 @@ export async function POST(req: Request) {
 
     // Mirror seat/license metadata in normalized table when available.
     try {
-      const businessId = Number((normalized as any).business_id || 1);
+      const claimedBusinessId = Number((normalized as any).business_id || businessId);
+      if (Number.isFinite(claimedBusinessId) && claimedBusinessId > 0 && claimedBusinessId !== businessId) {
+        return bad("License business mismatch", 403);
+      }
       const userLimit = Math.max(1, Number(licensePayload.user_limit || 1));
       const licenseType = String(licensePayload.license_type || "standard");
       const installationScope = String(licensePayload.installation_scope || "single_pc");
