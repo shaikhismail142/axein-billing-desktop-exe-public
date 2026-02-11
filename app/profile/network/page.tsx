@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 
 type LanStatus = {
   business_id: number;
+  seat_usage?: {
+    seat_limit: number;
+    active_users: number;
+    active_clients: number;
+    used_seats: number;
+    remaining_seats: number;
+  } | null;
   host: null | {
     host_uid: string;
     host_name: string;
@@ -23,6 +30,14 @@ type LanStatus = {
     last_seen_at?: string | null;
   }>;
   available_roles?: string[];
+  active_pairing_sessions?: Array<{
+    pairing_uid: string;
+    status: string;
+    expires_at: string;
+    max_uses: number;
+    used_uses: number;
+    created_at: string;
+  }>;
   sync?: {
     latest_event_id?: number;
     events_24h?: number;
@@ -36,6 +51,7 @@ export default function ProfileNetworkPage() {
   const [pairingCode, setPairingCode] = useState<string>("");
   const [pairingMeta, setPairingMeta] = useState<string>("");
   const [roleByClient, setRoleByClient] = useState<Record<string, string>>({});
+  const seatsFull = (status?.seat_usage?.remaining_seats ?? 1) <= 0;
 
   const [cfg, setCfg] = useState({
     host_name: "",
@@ -186,7 +202,15 @@ export default function ProfileNetworkPage() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
           <span className="muted">Sync Event ID: {Number(status?.sync?.latest_event_id || 0)}</span>
           <span className="muted">Events (24h): {Number(status?.sync?.events_24h || 0)}</span>
+          <span className="muted">
+            Seat Usage: {Number(status?.seat_usage?.used_seats || 0)}/{Number(status?.seat_usage?.seat_limit || 0)}
+          </span>
         </div>
+        {seatsFull ? (
+          <div style={{ color: "var(--warning)", marginTop: 8 }}>
+            Seat limit reached. Pairing and approvals are blocked until seats are freed or license is upgraded.
+          </div>
+        ) : null}
       </div>
 
       <div className="card" style={{ padding: 16, marginTop: 12 }}>
@@ -222,7 +246,7 @@ export default function ProfileNetworkPage() {
             Require approval
           </label>
           <button className="btn" disabled={busy} onClick={saveConfig}>Save Host Config</button>
-          <button className="btn" disabled={busy} onClick={generatePairingCode}>Generate Pairing Code</button>
+          <button className="btn" disabled={busy || seatsFull} onClick={generatePairingCode}>Generate Pairing Code</button>
         </div>
 
         {pairingCode ? (
@@ -279,7 +303,7 @@ export default function ProfileNetworkPage() {
                         <button className="btn" disabled={busy} onClick={() => updateRole(c.client_uid)}>Save Role</button>
                       ) : null}
                       {c.status === "pending" ? (
-                        <button className="btn" disabled={busy} onClick={() => approve(c.client_uid)}>Approve</button>
+                        <button className="btn" disabled={busy || seatsFull} onClick={() => approve(c.client_uid)}>Approve</button>
                       ) : null}
                       {c.status === "active" ? (
                         <button className="btn" disabled={busy} onClick={() => revoke(c.client_uid)}>Revoke</button>
@@ -292,6 +316,37 @@ export default function ProfileNetworkPage() {
               {(status?.clients || []).length === 0 ? (
                 <tr>
                   <td colSpan={6} className="muted">No LAN clients connected.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 16, marginTop: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Active Pairing Sessions</h3>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Status</th>
+                <th>Expires</th>
+                <th>Uses</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(status?.active_pairing_sessions || []).map((session) => (
+                <tr key={session.pairing_uid}>
+                  <td>{session.pairing_uid}</td>
+                  <td>{session.status}</td>
+                  <td>{new Date(session.expires_at).toLocaleString()}</td>
+                  <td>{session.used_uses}/{session.max_uses}</td>
+                </tr>
+              ))}
+              {(status?.active_pairing_sessions || []).length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="muted">No active pairing sessions.</td>
                 </tr>
               ) : null}
             </tbody>

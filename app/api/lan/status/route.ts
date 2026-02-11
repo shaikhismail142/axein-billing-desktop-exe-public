@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import { resolveSeatUsage } from "@/app/lib/seat-limits";
 
 export async function GET(req: NextRequest) {
   const access = await requireAnyPermission(
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
   try {
     const businessId = access.ctx.businessId;
 
-    const [hostRs, clientsRs, pairingRs, rolesRs, syncRs] = await Promise.all([
+    const [hostRs, clientsRs, pairingRs, rolesRs, syncRs, seatUsage] = await Promise.all([
       pool.query(
         `SELECT business_id, host_uid, host_name, mode, allow_pairing, require_approval, bind_address, port, updated_at
            FROM lan_host_configs
@@ -57,6 +58,7 @@ export async function GET(req: NextRequest) {
           WHERE business_id = $1`,
         [businessId]
       ),
+      resolveSeatUsage(pool, businessId).catch(() => null),
     ]);
 
     return NextResponse.json({
@@ -66,6 +68,7 @@ export async function GET(req: NextRequest) {
       active_pairing_sessions: pairingRs.rows || [],
       available_roles: Array.from(new Set((rolesRs.rows || []).map((r: any) => String(r.code)))),
       sync: syncRs.rows?.[0] || { latest_event_id: 0, events_24h: 0 },
+      seat_usage: seatUsage,
     });
   } catch (err) {
     console.error("GET /api/lan/status failed:", err);
