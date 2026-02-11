@@ -9,6 +9,7 @@ import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
 import { registerPdfFonts } from "@/lib/pdfFonts";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 /* ---------- helpers ---------- */
 
@@ -123,9 +124,16 @@ function ensureSpace(doc: PDFDocument, needed: number, drawHeader: () => void) {
 /* ---------- route ---------- */
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.purchases.manage", "perm.inventory.manage", "perm.export.manage", "perm.reports.view"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   await guardApiActivated(true);
   const id = params.id;
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
 
   const client = await pool.connect();
   try {

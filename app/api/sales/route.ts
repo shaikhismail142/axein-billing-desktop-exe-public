@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 /** -------- Types for request payload ---------- */
 type NewSaleItem = {
@@ -434,7 +435,14 @@ async function applyStockDelta(
 /** -------- Main handler ---------- */
 
 export async function POST(req: Request) {
-  const businessId = getRequestBusinessId(req, 1);
+  const access = await requireAnyPermission(
+    req,
+    ["perm.sales.manage", "perm.payments.manage", "perm.customers.manage", "perm.products.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   let payload: NewSaleBody;
   try {
     payload = (await req.json()) as NewSaleBody;

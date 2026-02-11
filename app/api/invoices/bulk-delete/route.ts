@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
 import { getRequestBusinessId } from "@/app/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 async function getBusinessScopedTables(client: any, tables: string[]) {
   try {
@@ -20,7 +21,14 @@ async function getBusinessScopedTables(client: any, tables: string[]) {
 }
 
 export async function POST(req: Request) {
-  const businessId = getRequestBusinessId(req, 1);
+  const access = await requireAnyPermission(
+    req,
+    ["perm.sales.manage", "perm.payments.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const body = await req.json().catch(() => null);
   if (!body) return new NextResponse("Bad JSON", { status: 400 });
 

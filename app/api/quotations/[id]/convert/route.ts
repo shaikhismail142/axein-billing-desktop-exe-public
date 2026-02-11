@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { getRequestBusinessId } from '@/lib/platform-context';
+import { requireAnyPermission } from '@/app/lib/request-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,8 +36,15 @@ async function getBusinessScopedTables(client: any, tables: string[]) {
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ['perm.quotations.manage', 'perm.sales.manage'],
+    'Forbidden'
+  );
+  if ('response' in access) return access.response;
+
   const qid = Number(params.id);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   if (!Number.isFinite(qid)) {
     return NextResponse.json({ ok: false, error: 'Invalid quotation id' }, { status: 400 });
   }

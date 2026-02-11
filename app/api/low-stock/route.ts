@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "../../lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,14 @@ async function hasProductBusinessColumn() {
 
 export async function GET(req: Request) {
   try {
-    const businessId = getRequestBusinessId(req, 1);
+    const access = await requireAnyPermission(
+      req,
+      ["perm.inventory.manage", "perm.products.manage", "perm.reports.view", "perm.sales.manage", "perm.purchases.manage"],
+      "Forbidden"
+    );
+    if ("response" in access) return access.response;
+
+    const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
     const scoped = await hasProductBusinessColumn();
     const { rows } = await pool.query(
       `SELECT p.id, p.name, p.sku, COALESCE(c.name,'other') as category, p.stock, p.reorder_level

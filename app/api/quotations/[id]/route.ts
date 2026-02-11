@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 async function getBusinessScopedTables(tables: string[]) {
   try {
@@ -23,8 +24,15 @@ async function getBusinessScopedTables(tables: string[]) {
 }
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.quotations.manage", "perm.sales.manage", "perm.reports.view"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const id = Number(params.id);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }

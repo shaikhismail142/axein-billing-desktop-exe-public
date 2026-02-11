@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db';
 import { getRequestBusinessId } from '@/app/lib/platform-context';
+import { requireAnyPermission } from '@/app/lib/request-access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,8 +30,15 @@ async function getBusinessScopedTables(client: any, tables: string[]) {
  * - Always returns JSON so pages never crash on res.json()
  */
 export async function GET(req: NextRequest) {
+  const access = await requireAnyPermission(
+    req,
+    ['perm.quotations.manage', 'perm.sales.manage', 'perm.reports.view'],
+    'Forbidden'
+  );
+  if ('response' in access) return access.response;
+
   const { searchParams } = new URL(req.url);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const q = (searchParams.get('q') || '').trim();
   const page = Math.max(1, Number(searchParams.get('page') || 1));
   const perPage = Math.min(200, Math.max(1, Number(searchParams.get('perPage') || 20)));
@@ -229,8 +237,15 @@ async function generateQuotationNumber(
 
 // ---------- CREATE ----------
 export async function POST(req: NextRequest) {
+  const access = await requireAnyPermission(
+    req,
+    ['perm.quotations.manage', 'perm.sales.manage'],
+    'Forbidden'
+  );
+  if ('response' in access) return access.response;
+
   const payload = await req.json().catch(() => ({} as any));
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const {
     customer_id = null,
     customer_name = null,

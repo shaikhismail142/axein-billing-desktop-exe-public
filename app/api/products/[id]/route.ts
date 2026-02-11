@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db"; // change to "@/lib/db" if that's your real path
 import { getRequestBusinessId } from "@/app/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 function n(v: unknown) {
   if (v === null || v === undefined || v === "") return undefined;
@@ -107,8 +108,22 @@ async function writeMeta(
 
 // GET /api/products/:id
 export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    [
+      "perm.products.manage",
+      "perm.inventory.manage",
+      "perm.sales.manage",
+      "perm.purchases.manage",
+      "perm.quotations.manage",
+      "perm.reports.view",
+    ],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const id = Number(params.id);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
 
   const scoped = await hasProductBusinessColumn();
@@ -139,8 +154,15 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
 // PATCH /api/products/:id
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.products.manage", "perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const id = Number(params.id);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
 
   const scoped = await hasProductBusinessColumn();
@@ -212,13 +234,20 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
   const ct = req.headers.get("content-type") || "";
   if (ct.includes("application/json")) return PATCH(req, ctx);
 
+  const access = await requireAnyPermission(
+    req,
+    ["perm.products.manage", "perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const form = await req.formData();
   if (String(form.get("_method") || "").toUpperCase() !== "PATCH") {
     return NextResponse.json({ ok: false, error: "Only PATCH supported" }, { status: 405 });
   }
 
   const id = Number(ctx.params.id);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
   const scoped = await hasProductBusinessColumn();
 

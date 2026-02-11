@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 /** Minimal CSV parser: supports quoted fields, commas, and newlines in quotes. */
 function parseCSV(text: string): string[][] {
@@ -166,7 +167,14 @@ async function updateProductMeta(id: number, patch: Record<string, any>, busines
 
 export async function POST(req: Request) {
   try {
-    const businessId = getRequestBusinessId(req, 1);
+    const access = await requireAnyPermission(
+      req,
+      ["perm.products.manage", "perm.inventory.manage", "perm.purchases.manage"],
+      "Forbidden"
+    );
+    if ("response" in access) return access.response;
+
+    const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
     const scoped = await hasProductBusinessColumn();
     const ct = req.headers.get("content-type") || "";
     if (!ct.includes("multipart/form-data")) {

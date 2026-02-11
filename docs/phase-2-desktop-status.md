@@ -45,6 +45,7 @@
 33. Removed stale desktop artifacts from runtime source tree (`app/components/ThemeToggle.tsx` unused wrapper and tracked `.DS_Store`).
 34. Cleared the lint warning backlog and revalidated desktop build/smoke/selftest on the updated codebase.
 35. Hardened desktop migration connection fallback so local shells with `PG*`/`DATABASE_URL` set to missing roles (for example `app`) can still migrate through safe local fallback candidates.
+36. Hardened RBAC permissions across remaining core business APIs (products, invoices, purchases, sales, quotations, low-stock) while keeping public/system endpoints intentionally open (health, onboarding/signup, template lookup, profile access snapshot, LAN sync auth routes).
 
 ## Pending (Next phase)
 1. Run Tauri native build on Windows build machine and produce signed NSIS installer artifacts.

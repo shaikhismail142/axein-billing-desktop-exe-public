@@ -5,10 +5,18 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.sales.manage", "perm.payments.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const id = Number(params.id);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) return NextResponse.json({ error: "Bad id" }, { status: 400 });
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }

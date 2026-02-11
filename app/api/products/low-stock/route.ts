@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 async function hasProductBusinessColumn() {
   try {
@@ -24,7 +25,14 @@ async function hasProductBusinessColumn() {
 /** GET: list products where stock_qty <= low_stock_threshold (meta) */
 export async function GET(req: Request) {
   try {
-    const businessId = getRequestBusinessId(req, 1);
+    const access = await requireAnyPermission(
+      req,
+      ["perm.inventory.manage", "perm.products.manage", "perm.reports.view", "perm.sales.manage", "perm.purchases.manage"],
+      "Forbidden"
+    );
+    if ("response" in access) return access.response;
+
+    const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
     const scoped = await hasProductBusinessColumn();
     const r = await pool.query(`
       SELECT id, name,
@@ -46,7 +54,14 @@ export async function GET(req: Request) {
  * body: { product_id, low_stock_threshold?, stock_qty? }
  */
 export async function PATCH(req: Request) {
-  const businessId = getRequestBusinessId(req, 1);
+  const access = await requireAnyPermission(
+    req,
+    ["perm.inventory.manage", "perm.products.manage", "perm.purchases.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   let body: { product_id: number; low_stock_threshold?: number; stock_qty?: number };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Bad JSON" }, { status: 400 }); }
   if (!Number.isFinite(body.product_id)) return NextResponse.json({ error: "product_id required" }, { status: 400 });

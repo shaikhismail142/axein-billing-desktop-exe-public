@@ -3,6 +3,7 @@ import { getRequestBusinessId } from "@/lib/platform-context";
 import PDFDocument from "pdfkit";
 import fs from "node:fs";
 import path from "node:path";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -166,8 +167,15 @@ async function getBusinessScopedTables(tables: string[]) {
 }
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.sales.manage", "perm.payments.manage", "perm.export.manage", "perm.reports.view"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const id = Number(params.id);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) {
     return new Response(JSON.stringify({ error: "Invalid id" }), { status: 400 });
   }

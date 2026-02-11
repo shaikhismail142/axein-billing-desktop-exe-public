@@ -6,6 +6,7 @@ import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import JSZip from "jszip";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 async function getBusinessScopedTables(tables: string[]) {
   try {
@@ -24,7 +25,14 @@ async function getBusinessScopedTables(tables: string[]) {
 }
 
 export async function POST(req: Request) {
-  const businessId = getRequestBusinessId(req, 1);
+  const access = await requireAnyPermission(
+    req,
+    ["perm.sales.manage", "perm.payments.manage", "perm.export.manage", "perm.reports.view"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   let body: { ids: number[] };
   try {
     body = await req.json();

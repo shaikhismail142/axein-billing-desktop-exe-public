@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 type ReqItem = {
   product_id?: number;
@@ -46,8 +47,15 @@ async function getColumns(client: any, table: string): Promise<Set<string>> {
 type ProductCols = { hasMeta: boolean; hasStockQty: boolean; hasStock: boolean };
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.sales.manage", "perm.payments.manage", "perm.customers.manage", "perm.products.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const saleId = Number(params.id);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   if (!Number.isFinite(saleId)) return NextResponse.json({ error: "Invalid sale id" }, { status: 400 });
 
   let body: ReqBody;

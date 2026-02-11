@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 const asNum = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const dateOrNull = (s?: string | null) =>
@@ -26,10 +27,17 @@ async function productsTableExists(client: any) {
   return !!r.rows?.[0]?.ok;
 }
 
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.purchases.manage", "perm.inventory.manage", "perm.reports.view"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   await guardApiActivated(true);
   const id = params.id;
-  const businessId = getRequestBusinessId(_, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
 
   const client = await pool.connect();
   try {
@@ -117,9 +125,16 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.purchases.manage", "perm.inventory.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   await guardApiActivated(true);
   const id = params.id;
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const body = await req.json().catch(() => ({}));
 
   const client = await pool.connect();
@@ -358,9 +373,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.purchases.manage", "perm.inventory.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   await guardApiActivated(true);
   const id = params.id;
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

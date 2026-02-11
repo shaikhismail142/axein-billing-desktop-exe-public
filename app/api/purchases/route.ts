@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -71,10 +72,17 @@ async function detectBatchesTable(client: any): Promise<{ table: "product_batche
 /* ----------------------------------- GET ---------------------------------- */
 /** List purchases with search + pagination support */
 export async function GET(req: NextRequest) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.purchases.manage", "perm.inventory.manage", "perm.reports.view"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   await guardApiActivated(true);
 
   const { searchParams } = new URL(req.url);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const limit = Math.max(1, Math.min(100, Number(searchParams.get("limit") || 20)));
   const offset = Math.max(0, Number(searchParams.get("offset") || 0));
   const q = (searchParams.get("q") || "").trim().toLowerCase();
@@ -165,8 +173,15 @@ export async function GET(req: NextRequest) {
 
 /* ----------------------------------- POST --------------------------------- */
 export async function POST(req: NextRequest) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.purchases.manage", "perm.inventory.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   await guardApiActivated(true);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
 
   const body = (await req.json().catch(() => ({}))) as PurchaseCreateIn;
   if (!body || !Array.isArray(body.items) || body.items.length === 0) {

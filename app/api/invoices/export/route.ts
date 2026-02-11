@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,8 +30,15 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET(req: Request) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.sales.manage", "perm.payments.manage", "perm.export.manage", "perm.reports.view"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const url = new URL(req.url);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const q = url.searchParams.get("q")?.trim();
   const from = url.searchParams.get("from")?.trim();
   const to = url.searchParams.get("to")?.trim();

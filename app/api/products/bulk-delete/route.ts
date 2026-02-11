@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
 import { getRequestBusinessId } from "@/app/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 async function hasProductBusinessColumn() {
   try {
@@ -20,7 +21,14 @@ async function hasProductBusinessColumn() {
 }
 
 export async function POST(req: Request) {
-  const businessId = getRequestBusinessId(req, 1);
+  const access = await requireAnyPermission(
+    req,
+    ["perm.products.manage", "perm.inventory.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const scoped = await hasProductBusinessColumn();
   const body = await req.json().catch(() => ({}));
   const ids: number[] | undefined = Array.isArray(body?.ids) ? body.ids : undefined;
