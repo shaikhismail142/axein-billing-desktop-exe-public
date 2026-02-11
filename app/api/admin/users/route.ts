@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId, getRequestUserId } from "@/app/lib/platform-context";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import { resolveSeatUsage } from "@/app/lib/seat-limits";
 
 type CreateBody = {
   full_name?: string;
@@ -26,35 +27,14 @@ function normalizeRoleCodes(input: unknown): string[] {
   return [...out];
 }
 
-async function resolveUserSeatLimit(client: any, businessId: number) {
-  const limitRs = await client.query(
-    `SELECT COALESCE(
-        (
-          SELECT l.user_limit
-            FROM licenses l
-           WHERE l.business_id = $1
-             AND lower(l.status) = 'active'
-             AND (l.valid_to IS NULL OR l.valid_to >= NOW())
-           ORDER BY l.valid_to DESC NULLS LAST, l.id DESC
-           LIMIT 1
-        ),
-        b.user_limit
-      ) AS user_limit
-       FROM businesses b
-      WHERE b.id = $1
-      LIMIT 1`,
-    [businessId]
-  );
-  return Number(limitRs.rows?.[0]?.user_limit || 1);
-}
-
 export async function GET(req: Request) {
   const access = await requireAnyPermission(req, ["perm.users.manage"], "Forbidden");
   if ("response" in access) return access.response;
 
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
-  const rs = await pool.query(
-    `SELECT
+  const [rs, seatUsage] = await Promise.all([
+    pool.query(
+      `SELECT
         u.id,
         u.full_name,
         u.email,
@@ -73,10 +53,12 @@ export async function GET(req: Request) {
       WHERE u.business_id = $1
       GROUP BY u.id
       ORDER BY u.created_at DESC`,
-    [businessId]
-  );
+      [businessId]
+    ),
+    resolveSeatUsage(pool, businessId).catch(() => null),
+  ]);
 
-  return NextResponse.json({ items: rs.rows || [] });
+  return NextResponse.json({ items: rs.rows || [], seat_usage: seatUsage });
 }
 
 export async function POST(req: Request) {
@@ -106,19 +88,14 @@ export async function POST(req: Request) {
     await client.query("BEGIN");
 
     if (status === "active") {
-      const usageRs = await client.query(
-        `SELECT
-            (SELECT COUNT(*)::int FROM users WHERE business_id = $1 AND status = 'active') AS active_users,
-            (SELECT COUNT(*)::int FROM lan_clients WHERE business_id = $1 AND status = 'active') AS active_clients`,
-        [businessId]
-      );
-      const activeUsers = Number(usageRs.rows?.[0]?.active_users || 0);
-      const activeClients = Number(usageRs.rows?.[0]?.active_clients || 0);
-      const userLimit = await resolveUserSeatLimit(client, businessId);
-      if (activeUsers + activeClients >= userLimit) {
+      const seatUsage = await resolveSeatUsage(client, businessId);
+      if (seatUsage.used_seats >= seatUsage.seat_limit) {
         await client.query("ROLLBACK");
         return NextResponse.json(
-          { error: `Seat limit reached (${userLimit}). Upgrade license to add more users/devices.` },
+          {
+            error: `Seat limit reached (${seatUsage.seat_limit}). Upgrade license to add more users/devices.`,
+            seat_usage: seatUsage,
+          },
           { status: 403 }
         );
       }

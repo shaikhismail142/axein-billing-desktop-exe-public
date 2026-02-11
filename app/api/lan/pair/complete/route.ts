@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { hashWithSecret, randomId, randomToken, safeEqHex } from "@/app/lib/lan-crypto";
+import { resolveSeatUsage } from "@/app/lib/seat-limits";
 
 type Body = {
   business_code?: string;
@@ -81,38 +82,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid or expired pairing code" }, { status: 401 });
     }
 
-    const limitRs = await client.query(
-      `SELECT COALESCE(
-          (
-            SELECT l.user_limit
-              FROM licenses l
-             WHERE l.business_id = $1
-               AND lower(l.status) = 'active'
-               AND (l.valid_to IS NULL OR l.valid_to >= NOW())
-             ORDER BY l.valid_to DESC NULLS LAST, l.id DESC
-             LIMIT 1
-          ),
-          b.user_limit
-        ) AS user_limit
-         FROM businesses b
-        WHERE b.id = $1
-        LIMIT 1`,
-      [businessId]
-    );
-    const userLimit = Number(limitRs.rows?.[0]?.user_limit || 1);
-
-    const usageRs = await client.query(
-      `SELECT
-          (SELECT COUNT(*)::int FROM users WHERE business_id = $1 AND status = 'active') AS active_users,
-          (SELECT COUNT(*)::int FROM lan_clients WHERE business_id = $1 AND status = 'active') AS active_clients`,
-      [businessId]
-    );
-    const activeUsers = Number(usageRs.rows?.[0]?.active_users || 0);
-    const activeClients = Number(usageRs.rows?.[0]?.active_clients || 0);
-    if (activeUsers + activeClients >= userLimit) {
+    const seatUsage = await resolveSeatUsage(client, businessId);
+    if (seatUsage.used_seats >= seatUsage.seat_limit) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: `Seat limit reached (${userLimit}). Upgrade license to add more users/devices.` },
+        {
+          error: `Seat limit reached (${seatUsage.seat_limit}). Upgrade license to add more users/devices.`,
+          seat_usage: seatUsage,
+        },
         { status: 403 }
       );
     }

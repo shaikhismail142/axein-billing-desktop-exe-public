@@ -6,6 +6,7 @@ import { pool } from "@/lib/db";
 import { isAdmin } from "@/app/lib/auth";
 import { getRequestBusinessId, getRequestUserId } from "@/app/lib/platform-context";
 import { getUserPermissionCodes } from "@/app/lib/platform-rbac";
+import { resolveSeatUsage } from "@/app/lib/seat-limits";
 
 type ApproveBody = {
   role_codes?: string[];
@@ -56,6 +57,18 @@ export async function POST(
     if (currentStatus === "active") {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "User already approved" }, { status: 409 });
+    }
+
+    const seatUsage = await resolveSeatUsage(client, businessId);
+    if (seatUsage.used_seats >= seatUsage.seat_limit) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error: `Seat limit reached (${seatUsage.seat_limit}). Upgrade license to add more users/devices.`,
+          seat_usage: seatUsage,
+        },
+        { status: 403 }
+      );
     }
 
     await client.query(

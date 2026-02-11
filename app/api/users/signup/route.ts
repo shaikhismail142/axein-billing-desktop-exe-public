@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
+import { resolveSeatUsage } from "@/app/lib/seat-limits";
 
 type SignupBody = {
   business_id?: number;
@@ -31,11 +32,24 @@ export async function POST(req: Request) {
   }
 
   const client = await pool.connect();
+  let txStarted = false;
   try {
-    await client.query("BEGIN");
-
     let businessId = Number(body.business_id || 0);
-    if (!Number.isFinite(businessId) || businessId <= 0) {
+    let businessFound = false;
+
+    if (Number.isFinite(businessId) && businessId > 0) {
+      const byIdRs = await client.query(
+        `SELECT id
+           FROM businesses
+          WHERE id = $1
+            AND is_active = TRUE
+          LIMIT 1`,
+        [businessId]
+      );
+      if (byIdRs.rowCount > 0) {
+        businessFound = true;
+      }
+    } else {
       const code = String(body.business_code || "").trim().toLowerCase();
       if (!code) {
         return NextResponse.json(
@@ -43,54 +57,37 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-      const br = await client.query(
-        `SELECT id, user_limit FROM businesses WHERE lower(code) = $1 AND is_active = TRUE LIMIT 1`,
+      const byCodeRs = await client.query(
+        `SELECT id
+           FROM businesses
+          WHERE lower(code) = $1
+            AND is_active = TRUE
+          LIMIT 1`,
         [code]
       );
-      if (br.rowCount === 0) {
-        return NextResponse.json({ error: "Business not found" }, { status: 404 });
+      if (byCodeRs.rowCount > 0) {
+        businessId = Number(byCodeRs.rows[0].id);
+        businessFound = true;
       }
-      businessId = Number(br.rows[0].id);
     }
 
-    const activeRs = await client.query(
-      `SELECT COUNT(*)::int AS active_users FROM users WHERE business_id = $1 AND status = 'active'`,
-      [businessId]
-    );
-    let limitRs;
-    try {
-      limitRs = await client.query(
-        `SELECT COALESCE(
-            (
-              SELECT l.user_limit
-                FROM licenses l
-               WHERE l.business_id = $1
-                 AND lower(l.status) = 'active'
-                 AND (l.valid_to IS NULL OR l.valid_to >= NOW())
-               ORDER BY l.valid_to DESC NULLS LAST, l.id DESC
-               LIMIT 1
-            ),
-            b.user_limit
-          ) AS user_limit
-           FROM businesses b
-          WHERE b.id = $1
-          LIMIT 1`,
-        [businessId]
-      );
-    } catch {
-      limitRs = await client.query(
-        `SELECT user_limit FROM businesses WHERE id = $1 LIMIT 1`,
-        [businessId]
-      );
+    if (!businessFound || !Number.isFinite(businessId) || businessId <= 0) {
+      return NextResponse.json({ error: "Business not found" }, { status: 404 });
     }
-    const activeUsers = Number(activeRs.rows?.[0]?.active_users || 0);
-    const userLimit = Number(limitRs.rows?.[0]?.user_limit || 1);
-    if (activeUsers >= userLimit) {
+
+    const seatUsage = await resolveSeatUsage(client, businessId);
+    if (seatUsage.used_seats >= seatUsage.seat_limit) {
       return NextResponse.json(
-        { error: `User seat limit reached (${userLimit}). Contact admin.` },
+        {
+          error: `User/device seat limit reached (${seatUsage.seat_limit}). Contact admin.`,
+          seat_usage: seatUsage,
+        },
         { status: 403 }
       );
     }
+
+    await client.query("BEGIN");
+    txStarted = true;
 
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -108,10 +105,20 @@ export async function POST(req: Request) {
       [businessId, user.id, JSON.stringify({ requested_role: requestedRole })]
     );
 
+    await client.query(
+      `INSERT INTO audit_logs (business_id, actor_user_id, action, entity_type, entity_id, meta_json)
+       VALUES ($1, NULL, 'user.signup.request', 'user', $2::text, $3::jsonb)`,
+      [businessId, user.id, JSON.stringify({ requested_role: requestedRole })]
+    );
+
     await client.query("COMMIT");
-    return NextResponse.json({ ok: true, user }, { status: 201 });
+    txStarted = false;
+    return NextResponse.json({ ok: true, user, seat_usage: seatUsage }, { status: 201 });
   } catch (err: any) {
-    await client.query("ROLLBACK");
+    if (txStarted) {
+      await client.query("ROLLBACK");
+      txStarted = false;
+    }
     const message = String(err?.message || "");
     console.error("POST /api/users/signup failed:", err);
     if (message.includes("users_business_email_uq") || message.includes("duplicate")) {

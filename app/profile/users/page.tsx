@@ -21,6 +21,14 @@ type BusinessUser = {
   roles: Array<{ code: string; name: string }>;
 };
 
+type SeatUsage = {
+  seat_limit: number;
+  active_users: number;
+  active_clients: number;
+  used_seats: number;
+  remaining_seats: number;
+};
+
 type PermissionCatalogRow = {
   id: number;
   code: string;
@@ -42,6 +50,7 @@ const ROLE_OPTIONS = ["owner", "admin", "manager", "accountant", "billing_staff"
 export default function ProfileUsersPage() {
   const [pendingItems, setPendingItems] = useState<PendingUser[]>([]);
   const [users, setUsers] = useState<BusinessUser[]>([]);
+  const [seatUsage, setSeatUsage] = useState<SeatUsage | null>(null);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [permissionCatalog, setPermissionCatalog] = useState<PermissionCatalogRow[]>([]);
 
@@ -82,6 +91,7 @@ export default function ProfileUsersPage() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Failed to load users");
     setUsers(Array.isArray(data?.items) ? data.items : []);
+    setSeatUsage(data?.seat_usage || null);
   }
 
   async function loadRolesAndPermissions() {
@@ -127,6 +137,7 @@ export default function ProfileUsersPage() {
     () => roles.find((r) => Number(r.id) === Number(selectedRoleId)) || null,
     [roles, selectedRoleId]
   );
+  const seatsFull = (seatUsage?.remaining_seats ?? 1) <= 0;
 
   async function approvePendingUser(userId: number) {
     const roleCode = roleByPendingUser[userId] || "billing_staff";
@@ -230,6 +241,15 @@ export default function ProfileUsersPage() {
             {busy ? "Refreshing..." : "Refresh"}
           </button>
         </div>
+        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          Seat usage: {seatUsage?.used_seats ?? 0}/{seatUsage?.seat_limit ?? 0}
+          {" "}({seatUsage?.active_users ?? 0} users + {seatUsage?.active_clients ?? 0} LAN devices)
+        </div>
+        {seatsFull ? (
+          <div style={{ marginTop: 8, color: "var(--warning)" }}>
+            Active seat limit reached. Approvals/active user creation are blocked until seats are freed or license is upgraded.
+          </div>
+        ) : null}
 
         {error ? <div style={{ marginTop: 10, color: "var(--danger)" }}>{error}</div> : null}
         {ok ? <div style={{ marginTop: 10, color: "var(--success)" }}>{ok}</div> : null}
@@ -274,7 +294,7 @@ export default function ProfileUsersPage() {
                       </select>
                     </td>
                     <td>
-                      <button className="btn" disabled={saving} onClick={() => approvePendingUser(user.id)}>
+                      <button className="btn" disabled={saving || seatsFull} onClick={() => approvePendingUser(user.id)}>
                         Approve
                       </button>
                     </td>
@@ -358,7 +378,11 @@ export default function ProfileUsersPage() {
           </label>
         </div>
         <div style={{ marginTop: 10 }}>
-          <button className="btn" disabled={saving} onClick={createUserByAdmin}>
+          <button
+            className="btn"
+            disabled={saving || (createUserForm.status === "active" && seatsFull)}
+            onClick={createUserByAdmin}
+          >
             {saving ? "Saving..." : "Create User"}
           </button>
         </div>
