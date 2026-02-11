@@ -1,0 +1,15 @@
+{
+  "v": 2,
+  "license_key": "AXEIN-ABCD-EFGH-IJKL",
+  "email": "owner@example.com",
+  "business_name": "Acme Traders Pvt Ltd",
+  "business_type": "general_store",
+  "usage_mode": "standalone",
+  "user_limit": 5,
+  "license_type": "pro",
+  "valid_from": "2026-02-11T00:00:00.000Z",
+  "expires_at": "2027-02-11T00:00:00.000Z",
+  "installation_scope": "business_lan",
+  "issued_at": "2026-02-11T08:30:00.000Z",
+  "features": ["quotations", "invoices", "backup", "reports"]
+}

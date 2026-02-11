@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AxEin Billing (Promedix) Handbook</title>
+    <style>
+      :root{
+        --ink:#0b1220;
+        --muted:#475569;
+        --border:#e2e8f0;
+        --bg:#ffffff;
+        --panel:#f8fafc;
+        --brand:#1f4a8f;
+        --brand-2:#0b2a55;
+        --accent:#0ea5e9;
+        --good:#065f46;
+        --warn:#b45309;
+        --bad:#b91c1c;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body{
+        margin:0;
+        background:var(--bg);
+        color:var(--ink);
+        font-family:var(--sans);
+        line-height:1.55;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      /* Print */
+      @page { size: A4; margin: 14mm; }
+      @media print {
+        .noprint { display:none !important; }
+        a { color: inherit; text-decoration: none; }
+        .page { padding: 0; }
+        .toc { break-after: page; page-break-after: always; }
+        .callout { break-inside: avoid; page-break-inside: avoid; }
+        .card { break-inside: avoid; page-break-inside: avoid; }
+      }
+
+      /* Layout */
+      .page{
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 36px 22px 64px;
+      }
+      .topbar{
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: color-mix(in oklab, var(--bg) 92%, transparent);
+        border-bottom: 1px solid var(--border);
+        backdrop-filter: blur(8px);
+      }
+      .topbar-inner{
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 10px 22px;
+        display:flex;
+        gap: 10px;
+        align-items:center;
+        justify-content: space-between;
+      }
+      .badge{
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+        font-size: 12px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--panel);
+        color: var(--muted);
+      }
+      .btn{
+        display:inline-flex;
+        align-items:center;
+        gap:8px;
+        font-size: 12px;
+        padding: 7px 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg);
+        color: var(--ink);
+        text-decoration:none;
+      }
+
+      /* Typography */
+      h1,h2,h3{ line-height: 1.15; margin: 0; }
+      h1{ font-size: 34px; letter-spacing: -0.02em; }
+      h2{ font-size: 22px; margin-top: 30px; padding-top: 12px; border-top: 1px solid var(--border); }
+      h3{ font-size: 16px; margin-top: 18px; }
+      p{ margin: 10px 0; color: var(--ink); }
+      .muted{ color: var(--muted); }
+      .small{ font-size: 12px; }
+      code, pre{ font-family: var(--mono); }
+      pre{
+        margin: 10px 0;
+        padding: 12px 14px;
+        background: #0b1220;
+        color: #e5e7eb;
+        border-radius: 12px;
+        overflow: auto;
+        font-size: 12px;
+      }
+      .k{
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 1px 6px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+      ul{ margin: 8px 0 12px 18px; }
+      li{ margin: 4px 0; }
+
+      /* Cards / callouts */
+      .grid{
+        display:grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .card{
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 16px;
+        padding: 14px;
+      }
+      .card b{ color: var(--ink); }
+      .callout{
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--accent);
+        border-radius: 14px;
+        padding: 12px 14px;
+        background: var(--panel);
+      }
+      .callout.good{ border-left-color: var(--good); }
+      .callout.warn{ border-left-color: var(--warn); }
+      .callout.bad{ border-left-color: var(--bad); }
+
+      /* Cover */
+      .cover{
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow:hidden;
+      }
+      .cover-top{
+        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        color: #fff;
+        padding: 26px 24px;
+      }
+      .cover-top .sub{ opacity: 0.9; margin-top: 8px; }
+      .cover-body{
+        padding: 18px 24px;
+        background: var(--bg);
+      }
+      .cover-kpis{
+        display:grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .kpi{
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: var(--panel);
+      }
+      .kpi .l{ font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+      .kpi .v{ margin-top: 6px; font-weight: 700; }
+
+      /* ToC */
+      .toc a{ color: var(--ink); text-decoration: none; }
+      .toc ol{ margin: 10px 0 0 18px; }
+      .toc li{ margin: 6px 0; }
+      .toc .sec{ font-weight: 650; }
+
+      /* Tables (documentation tables, not app tables) */
+      table.doc{
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0 14px;
+        font-size: 13px;
+      }
+      table.doc th, table.doc td{
+        border-top: 1px solid var(--border);
+        padding: 8px 10px;
+        vertical-align: top;
+      }
+      table.doc th{
+        text-align: left;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+
+      .hr{ height: 1px; background: var(--border); margin: 14px 0; }
+    </style>
+  </head>
+
+  <body>
+    <div class="topbar noprint">
+      <div class="topbar-inner">
+        <div class="badge">
+          <b>AxEin Billing (Promedix)</b>
+          <span class="muted">Handbook</span>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <a class="btn" href="#toc">Index</a>
+          <a class="btn" href="#troubleshooting">Troubleshooting</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="page">
+      <!-- Cover -->
+      <section class="cover" id="cover">
+        <div class="cover-top">
+          <div class="small" style="opacity:0.9; letter-spacing:0.12em; text-transform:uppercase;">Product Handbook</div>
+          <h1 style="margin-top:8px;">AxEin Billing (Promedix)</h1>
+          <div class="sub">Billing + Inventory + GST Reports + Accounting (Vendor & Customer Debts)</div>
+        </div>
+        <div class="cover-body">
+          <div class="grid">
+            <div class="card">
+              <b>Who This Is For</b>
+              <div class="muted small" style="margin-top:6px;">
+                Admins, billing operators, inventory managers, and accountants/CA reviewers.
+              </div>
+              <ul class="small">
+                <li>Daily billing & invoice printing</li>
+                <li>Inventory tracking (batches, expiry, low-stock)</li>
+                <li>GST input/output computation & export</li>
+                <li>Vendor payables + customer receivables</li>
+              </ul>
+            </div>
+            <div class="card">
+              <b>Document Info</b>
+              <table class="doc">
+                <tr><th>Version</th><td>1.0</td></tr>
+                <tr><th>Date</th><td>2026-02-07</td></tr>
+                <tr><th>Scope</th><td>Next.js app in <span class="k">/Users/nadiya/AxEin/app</span></td></tr>
+              </table>
+              <div class="callout warn small">
+                Screens and exact labels may differ slightly by deployment. Core workflows and data fields are stable.
+              </div>
+            </div>
+          </div>
+          <div class="cover-kpis">
+            <div class="kpi"><div class="l">Quick Billing</div><div class="v">Full / Partial / Pending Payments</div></div>
+            <div class="kpi"><div class="l">Healthcare Fields</div><div class="v">Patient / Doctor / DC No</div></div>
+            <div class="kpi"><div class="l">Exports</div><div class="v">CSV/Excel + Print Views</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Table of Contents -->
+      <section class="toc" id="toc" style="margin-top:22px;">
+        <h2 style="border-top:none; margin-top:0;">Index</h2>
+        <ol>
+          <li class="sec"><a href="#getting-started">Getting Started</a></li>
+          <li class="sec"><a href="#navigation">Navigation & UI</a></li>
+          <li class="sec"><a href="#quick-billing">Quick Billing</a></li>
+          <li class="sec"><a href="#invoices">Invoices</a></li>
+          <li class="sec"><a href="#products">Products & Categories</a></li>
+          <li class="sec"><a href="#quotations">Quotations</a></li>
+          <li class="sec"><a href="#inventory">Inventory</a></li>
+          <li class="sec"><a href="#purchases">Purchases</a></li>
+          <li class="sec"><a href="#reports">Reports</a></li>
+          <li class="sec"><a href="#gst">GST (Tax) Report</a></li>
+          <li class="sec"><a href="#accounting">Accounting (Debts)</a></li>
+          <li class="sec"><a href="#settings">Settings (Admin)</a></li>
+          <li class="sec"><a href="#backup-restore">Backup & Restore</a></li>
+          <li class="sec"><a href="#printing">Printing & PDFs</a></li>
+          <li class="sec"><a href="#installer">Windows Installer</a></li>
+          <li class="sec"><a href="#troubleshooting">Troubleshooting</a></li>
+          <li class="sec"><a href="#appendix">Appendix (Fields)</a></li>
+        </ol>
+      </section>
+
+      <section id="getting-started">
+        <h2>Getting Started</h2>
+        <div class="grid">
+          <div class="card">
+            <b>Access</b>
+            <p class="muted small">Open the app URL (for local dev: <span class="k">http://localhost:3000</span>).</p>
+            <ul class="small">
+              <li>If the app is license-gated, activate it via the Activation flow.</li>
+              <li>Use the top-right actions to switch theme and review alerts.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <b>Recommended First Setup</b>
+            <ul class="small">
+              <li>Settings: fill Business Profile (name, GSTIN, address, phone).</li>
+              <li>Settings: add Company Bank Details (shown on invoices).</li>
+              <li>Settings: set invoice defaults (notes/terms) if needed.</li>
+              <li>Products: create categories and products, then start billing.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="navigation">
+        <h2>Navigation & UI</h2>
+        <div class="card">
+          <b>App Layout</b>
+          <ul class="small">
+            <li><b>Header</b>: primary navigation (Dashboard, Inventory, Invoices, Reports, Accounting, Settings).</li>
+            <li><b>Sidebar</b>: quick module shortcuts (collapsible on desktop, drawer on mobile).</li>
+            <li><b>Alerts bell</b>: low-stock, expiry, and vendor debt reminders.</li>
+            <li><b>Theme toggle</b>: light/dark mode.</li>
+          </ul>
+          <div class="callout small">
+            Tip: The UI is optimized for keyboard + mouse. Use table actions (Edit/Save/Export) for fast operations.
+          </div>
+        </div>
+      </section>
+
+      <section id="quick-billing">
+        <h2>Quick Billing</h2>
+        <div class="card">
+          <b>Purpose</b>
+          <p class="muted small">Create an invoice fast: search products, add quantities, capture payment, and generate an invoice instantly.</p>
+          <h3>Key Features</h3>
+          <ul class="small">
+            <li>Customer selection (optional): select existing customer or type a new name.</li>
+            <li>Healthcare fields: Patient Name, Doctor Name.</li>
+            <li>Item fields: Category, HSN, Lot/Batch No, Expiry Date (if available).</li>
+            <li>Payment modes: <b>Paid</b>, <b>Partial</b>, <b>Pending</b>.</li>
+            <li>Auto-generated DC No format: <span class="k">DC/&lt;CompanyName&gt;/&lt;YYYYMMDD&gt;/&lt;HHmm&gt;-&lt;Number&gt;</span>.</li>
+          </ul>
+
+          <h3>Workflow</h3>
+          <ol class="small">
+            <li>Open <span class="k">Quick Billing</span>.</li>
+            <li>Select customer (or leave blank for walk-in).</li>
+            <li>Search products, click a suggestion to add as a line.</li>
+            <li>Update Qty/Discount if needed, add Lot/Expiry if applicable.</li>
+            <li>Choose payment mode (Paid/Partial/Pending) and method (cash/upi/card/bank).</li>
+            <li>Click <b>Save & View Invoice</b>.</li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="invoices">
+        <h2>Invoices</h2>
+        <div class="grid">
+          <div class="card">
+            <b>Invoice List</b>
+            <ul class="small">
+              <li>Search by invoice number or customer name.</li>
+              <li>Sort and filter by date range.</li>
+              <li>Export list as CSV.</li>
+              <li>Payment badge tags: <b>Paid</b>, <b>Partial</b>, <b>Pending</b>.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <b>Invoice Details</b>
+            <ul class="small">
+              <li>Shows patient/doctor/DC No (if set).</li>
+              <li>Shows item metadata: Category, HSN, Lot, Expiry.</li>
+              <li>Shows Amount Paid and Pending Amount.</li>
+              <li>Print/PDF button generates a shareable PDF.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="products">
+        <h2>Products & Categories</h2>
+        <div class="card">
+          <b>Products</b>
+          <ul class="small">
+            <li>Core fields: Name, Selling Price, GST slab, Stock Qty, Low Stock Threshold.</li>
+            <li>Healthcare fields: Category, HSN Code, Lot/Batch No, Expiry Date (optional).</li>
+            <li>Import products via CSV (Products Import) where supported.</li>
+          </ul>
+          <div class="callout good small">
+            Best practice: maintain Categories properly so Quick Billing and reporting remain consistent.
+          </div>
+        </div>
+      </section>
+
+      <section id="quotations">
+        <h2>Quotations</h2>
+        <div class="card">
+          <ul class="small">
+            <li>Create quotes for customers before converting to invoices.</li>
+            <li>Supports additional fields like Lot and Expiry (if available) and product tax details.</li>
+            <li>Convert quotation to invoice when ready.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="inventory">
+        <h2>Inventory</h2>
+        <div class="grid">
+          <div class="card">
+            <b>Low Stock</b>
+            <p class="muted small">Highlights items at or under threshold. Update values and save where supported.</p>
+          </div>
+          <div class="card">
+            <b>Expiry</b>
+            <p class="muted small">Shows near-expiry and expired products/batches (based on configured near-expiry days).</p>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px;">
+          <b>Stock Adjustments</b>
+          <ul class="small">
+            <li>Create draft adjustments and post them to apply stock changes.</li>
+            <li>Use reasons such as damage/loss/correction.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="purchases">
+        <h2>Purchases</h2>
+        <div class="card">
+          <b>New Purchase</b>
+          <ul class="small">
+            <li>Add vendor bill details and item lines.</li>
+            <li>Optionally add quantities to inventory immediately.</li>
+            <li>Supports importing lines via CSV in the items grid.</li>
+            <li>Payment tracking: paid amount and pending amount.</li>
+          </ul>
+          <div class="callout warn small">
+            Purchases drive Vendor Debt in Accounting when they have pending amounts.
+          </div>
+        </div>
+      </section>
+
+      <section id="reports">
+        <h2>Reports</h2>
+        <div class="card">
+          <ul class="small">
+            <li>KPIs: Revenue, fast/slow movers, low-stock trends.</li>
+            <li>Dead stock list with pagination.</li>
+            <li>Tax/GST computation chart and links to print/export.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="gst">
+        <h2>GST (Tax) Report</h2>
+        <div class="grid">
+          <div class="card">
+            <b>What It Means</b>
+            <ul class="small">
+              <li><b>Output GST</b>: GST collected on invoices (sales).</li>
+              <li><b>Input GST</b>: GST paid on purchases (eligible ITC).</li>
+              <li><b>Net GST</b>: Output − Input (Payable if positive, Credit if negative).</li>
+            </ul>
+          </div>
+          <div class="card">
+            <b>Controls</b>
+            <ul class="small">
+              <li>Monthly / Quarterly grouping</li>
+              <li>Toggle to include/exclude draft purchases</li>
+              <li>Export to CSV/Excel for CA submission</li>
+              <li>Print view formatted for A4</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="accounting">
+        <h2>Accounting (Debts)</h2>
+        <div class="grid">
+          <div class="card">
+            <b>Vendor Debt (Purchases)</b>
+            <p class="muted small">Shows payables: vendor bills with pending amounts.</p>
+            <ul class="small">
+              <li>Outstanding total per vendor</li>
+              <li>Last transaction date</li>
+              <li>Aging buckets (0–30 / 31–60 / 60+)</li>
+            </ul>
+          </div>
+          <div class="card">
+            <b>Customer Debt (Invoices)</b>
+            <p class="muted small">Shows receivables: customers with pending invoice balances.</p>
+            <ul class="small">
+              <li>Outstanding total per customer</li>
+              <li>Recent unpaid invoices</li>
+              <li>Aging buckets for receivables</li>
+            </ul>
+          </div>
+        </div>
+        <div class="callout small" style="margin-top:12px;">
+          Alerts Bell includes vendor debt reminders so billing/admin teams can follow up quickly.
+        </div>
+      </section>
+
+      <section id="settings">
+        <h2>Settings (Admin)</h2>
+        <div class="card">
+          <b>Business Profile</b>
+          <ul class="small">
+            <li>Company name, address, GSTIN, phone, state code.</li>
+            <li>Logo (best for invoice): a wide logo around <span class="k">600×200</span> PNG/JPG/WebP.</li>
+          </ul>
+          <h3>Bank Details</h3>
+          <ul class="small">
+            <li>Account name, account number, IFSC, bank name, branch, UPI (optional).</li>
+            <li>Printed in invoice footer.</li>
+          </ul>
+          <h3>Invoice Defaults</h3>
+          <ul class="small">
+            <li>Default Notes / Terms appear in Quick Billing (editable per invoice).</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="backup-restore">
+        <h2>Backup & Restore</h2>
+        <div class="card">
+          <ul class="small">
+            <li>Backup is generated as a <b>ZIP</b> archive from Settings.</li>
+            <li>Restore re-imports data for disaster recovery.</li>
+            <li>Recommended schedule: daily or weekly backups depending on transaction volume.</li>
+          </ul>
+          <div class="callout bad small">
+            Restore overwrites data. Always keep a safe copy of the current backup before restoring.
+          </div>
+        </div>
+      </section>
+
+      <section id="printing">
+        <h2>Printing & PDFs</h2>
+        <div class="card">
+          <b>Invoices / Quotations</b>
+          <ul class="small">
+            <li>Use Invoice page <b>Print/PDF</b> to generate a shareable PDF.</li>
+            <li>Print layouts are designed for A4 and include healthcare fields.</li>
+          </ul>
+          <b>GST Summary</b>
+          <ul class="small">
+            <li>Print view is optimized for CA submission and includes period and grouping.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="installer">
+        <h2>Windows Installer</h2>
+        <div class="card">
+          <p class="muted small">
+            The project includes a Windows installer script to simplify deployment on Windows 10/11.
+          </p>
+          <table class="doc">
+            <tr><th>Script</th><td><span class="k">app/script-tools/axein-installer.ps1</span></td></tr>
+            <tr><th>Does</th><td>Installs dependencies, configures services, starts containers, and helps initialize the app.</td></tr>
+          </table>
+          <div class="callout small">
+            If your environment requires a fully offline installer bundle, treat the PowerShell script as the starting point and add offline package sources.
+          </div>
+        </div>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>Troubleshooting</h2>
+        <div class="card">
+          <h3>Common Fixes</h3>
+          <ul class="small">
+            <li><b>Changes not showing</b>: rebuild the web container using the local override compose file.</li>
+            <li><b>Blank print</b>: ensure the printed content is within <span class="k">.print-area</span> (handled for major print views).</li>
+            <li><b>DB migrations</b>: apply the latest migrations when new fields are introduced (payments, batch/expiry, etc.).</li>
+          </ul>
+          <h3>Local Rebuild Command</h3>
+          <pre>cd /Users/nadiya/AxEin
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build web</pre>
+        </div>
+      </section>
+
+      <section id="appendix">
+        <h2>Appendix (Key Fields)</h2>
+        <div class="card">
+          <table class="doc">
+            <thead>
+              <tr><th>Area</th><th>Field</th><th>Meaning</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Invoice</td><td>Amount Paid</td><td>Amount received at billing time.</td></tr>
+              <tr><td>Invoice</td><td>Pending Amount</td><td>Balance due (Total − Paid).</td></tr>
+              <tr><td>Invoice</td><td>Payment Status</td><td>Paid / Partial / Pending.</td></tr>
+              <tr><td>Healthcare</td><td>Patient / Doctor</td><td>Printed on invoice header for compliance/workflow.</td></tr>
+              <tr><td>Healthcare</td><td>DC No</td><td>Delivery challan number auto-generated per day.</td></tr>
+              <tr><td>Inventory</td><td>Lot / Expiry</td><td>Batch traceability and near-expiry monitoring.</td></tr>
+              <tr><td>GST</td><td>Output vs Input</td><td>Output GST from sales; Input GST from purchases (ITC).</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="hr"></div>
+      <div class="muted small">
+        End of handbook.
+      </div>
+    </div>
+  </body>
+</html>
+

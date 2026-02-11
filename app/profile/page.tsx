@@ -1,0 +1,66 @@
+import Link from "next/link";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const cards = [
+  {
+    href: "/register-business",
+    title: "Register Business",
+    desc: "Set business type, usage mode, seat count, and owner account for first-time setup.",
+  },
+  {
+    href: "/signup",
+    title: "Sign Up",
+    desc: "Create a new user request that remains pending until admin approval.",
+  },
+  {
+    href: "/profile/settings",
+    title: "Settings",
+    desc: "Business profile, license key activation, invoice defaults, and backup/restore controls.",
+  },
+  {
+    href: "/profile/users",
+    title: "User Access",
+    desc: "Approve pending users, assign roles, and review RBAC access visibility.",
+  },
+  {
+    href: "/profile/logs",
+    title: "Diagnostics Logs",
+    desc: "View and download logs for sharing with AxEin support when issues occur.",
+  },
+];
+
+export default function ProfilePage() {
+  return (
+    <div className="container">
+      <div className="card" style={{ padding: 16 }}>
+        <h1 style={{ margin: 0 }}>Profile</h1>
+        <p className="muted" style={{ marginTop: 8 }}>
+          Manage settings, users, access approvals, and diagnostic logs.
+        </p>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gap: 12,
+          marginTop: 12,
+        }}
+      >
+        {cards.map((c) => (
+          <Link
+            key={c.href}
+            href={c.href}
+            className="card"
+            style={{ display: "block", padding: 14, textDecoration: "none" }}
+          >
+            <h3 style={{ margin: 0 }}>{c.title}</h3>
+            <p className="muted" style={{ marginTop: 8 }}>{c.desc}</p>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
