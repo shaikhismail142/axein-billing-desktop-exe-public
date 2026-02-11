@@ -15,7 +15,7 @@ function csvEscape(v: any) {
 
 export async function GET(req: NextRequest) {
   const access = await requireRevenueAccess(req);
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const url = new URL(req.url);
   const from = url.searchParams.get("from");

@@ -14,7 +14,7 @@ type Body = {
 
 export async function POST(req: NextRequest) {
   const access = await requireAnyPermission(req, ["perm.settings.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const body = (await req.json().catch(() => ({}))) as Body;
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);

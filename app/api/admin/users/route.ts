@@ -50,7 +50,7 @@ async function resolveUserSeatLimit(client: any, businessId: number) {
 
 export async function GET(req: Request) {
   const access = await requireAnyPermission(req, ["perm.users.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const rs = await pool.query(
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const access = await requireAnyPermission(req, ["perm.users.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const body = (await req.json().catch(() => ({}))) as CreateBody;
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);

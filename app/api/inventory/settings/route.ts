@@ -22,7 +22,7 @@ export async function GET(req: Request) {
   if ("response" in g) return g.response;
 
   const access = await requireAnyPermission(req, ["perm.inventory.manage", "perm.settings.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   const settingsCols = await getTableColumns(pool, "settings").catch(() => new Set<string>());
@@ -51,7 +51,7 @@ export async function PATCH(req: Request) {
   if ("response" in g) return g.response;
 
   const access = await requireAnyPermission(req, ["perm.inventory.manage", "perm.settings.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   let payload: any = {};

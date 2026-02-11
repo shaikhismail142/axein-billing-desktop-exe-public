@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     ["perm.settings.manage", "perm.users.manage", "perm.users.approve"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const businessId = access.ctx.businessId;
 

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const access = await requireRevenueAccess(req);
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   const url = new URL(req.url);

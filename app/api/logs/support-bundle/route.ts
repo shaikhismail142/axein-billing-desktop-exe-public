@@ -13,7 +13,7 @@ function parseLimit(input: string | null, fallback: number, max: number) {
 
 export async function GET(req: Request) {
   const access = await requireAllPermissions(req, ["perm.logs.view", "perm.logs.export"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const businessId = access.ctx.businessId;
   const url = new URL(req.url);

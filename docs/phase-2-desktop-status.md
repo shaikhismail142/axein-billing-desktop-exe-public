@@ -26,14 +26,21 @@
 18. Hardened accounting/support APIs (debts, alerts, categories, legacy expiry, generic settings) with permission checks and business-aware data filtering/upserts.
 19. Strengthened admin/support endpoints by adding RBAC-backed backup/restore access controls, business-scoped backup exports, and business-isolated logo upload paths.
 20. Hardened license mutation endpoints (verify key, start trial, toggle trial, deactivate) with explicit license/settings permission checks and business mismatch safeguards.
+21. Resolved Next build TypeScript narrowing issues across guarded API routes by standardizing route guard response checks.
+22. Added LAN auth type-safe unauthorized handling and updated timing-safe comparison implementation for Node 25 type compatibility.
+23. Verified desktop validation workflow locally:
+   - `npm run desktop:preflight`
+   - `npm run desktop:lan:selftest`
+   - `npm run desktop:web:build`
+   - `npm run desktop:smoke`
 
 ## Pending (Next phase)
-1. Install/verify Rust toolchain and run actual Tauri builds on Windows.
-2. Produce signed NSIS installer artifacts and validate install/uninstall flow.
+1. Run Tauri native build on Windows build machine and produce signed NSIS installer artifacts.
+2. Validate installer upgrade/uninstall flows on clean Windows 10 and Windows 11 machines.
 3. Implement local DB bootstrap service packaging strategy (embedded Postgres distribution path).
 4. Add LAN host/client pairing UX and secure transport setup.
 5. Harden RBAC enforcement in every API route (current foundation is partial).
 
 ## Notes
-- Current local environment cannot compile Tauri because `cargo/rustc` are not installed.
-- Desktop scaffolding is code-complete and ready for Windows build machine execution.
+- Rust toolchain is now installed and preflight checks pass in local development.
+- Full `npm run desktop:build` is currently blocked in this environment by upstream crates index DNS/network resolution (`index.crates.io`), not by application compile errors.

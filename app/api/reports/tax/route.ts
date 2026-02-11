@@ -8,7 +8,7 @@ import { requireRevenueAccess } from "@/app/lib/request-access";
 export async function GET(req: NextRequest) {
   try {
     const access = await requireRevenueAccess(req);
-    if (!access.ok) return access.response;
+    if ("response" in access) return access.response;
 
     const url = new URL(req.url);
     const from = url.searchParams.get("from");

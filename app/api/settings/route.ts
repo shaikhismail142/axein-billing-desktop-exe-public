@@ -107,7 +107,7 @@ async function syncLegacyBusinessValue(
 
 export async function GET(req: Request) {
   const access = await requireAnyPermission(req, ["perm.settings.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   const url = new URL(req.url);
@@ -121,7 +121,7 @@ export async function GET(req: Request) {
 
 export async function PATCH(req: Request) {
   const access = await requireAnyPermission(req, ["perm.settings.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   try {
@@ -148,7 +148,7 @@ export async function PATCH(req: Request) {
 
 export async function PUT(req: Request) {
   const access = await requireAnyPermission(req, ["perm.settings.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   try {

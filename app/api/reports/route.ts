@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   if ("response" in g) return g.response;
 
   const access = await requireRevenueAccess(req);
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   try {

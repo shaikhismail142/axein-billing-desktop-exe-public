@@ -12,7 +12,7 @@ type Body = {
 
 export async function PUT(req: NextRequest, { params }: { params: { client_uid: string } }) {
   const access = await requireAnyPermission(req, ["perm.users.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const actorUserId = access.ctx.userId > 0 ? access.ctx.userId : getRequestUserId(req, 1);

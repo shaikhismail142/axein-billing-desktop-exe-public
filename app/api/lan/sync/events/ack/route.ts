@@ -12,7 +12,7 @@ type Body = {
 export async function POST(req: Request) {
   const auth = await authenticateLanClient(req);
   if (!auth.ok) {
-    return NextResponse.json({ error: "Unauthorized", reason: auth.reason }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized", reason: "reason" in auth ? auth.reason : "unauthorized" }, { status: 401 });
   }
 
   const body = (await req.json().catch(() => ({}))) as Body;

@@ -8,7 +8,7 @@ import { requireAnyPermission } from "@/app/lib/request-access";
 
 export async function GET(req: Request) {
   const access = await requireAnyPermission(req, ["perm.roles.manage", "perm.users.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
 

@@ -73,7 +73,7 @@ export async function POST(req: Request) {
     ["perm.invoice.custom_fields.manage", "perm.settings.manage"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const body = (await req.json().catch(() => ({}))) as CustomFieldBody;
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
@@ -127,7 +127,7 @@ export async function PUT(req: Request) {
     ["perm.invoice.custom_fields.manage", "perm.settings.manage"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const body = (await req.json().catch(() => ({}))) as CustomFieldBody;
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
@@ -187,7 +187,7 @@ export async function DELETE(req: Request) {
     ["perm.invoice.custom_fields.manage", "perm.settings.manage"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const url = new URL(req.url);

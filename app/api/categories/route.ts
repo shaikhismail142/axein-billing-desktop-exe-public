@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     ["perm.products.manage", "perm.inventory.manage", "perm.sales.manage"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   try {
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
     ["perm.products.manage", "perm.inventory.manage", "perm.sales.manage"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   try {

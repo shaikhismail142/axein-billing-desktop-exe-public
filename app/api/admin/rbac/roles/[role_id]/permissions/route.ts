@@ -22,7 +22,7 @@ function normalizeCodes(input: unknown): string[] {
 
 export async function PUT(req: Request, { params }: { params: { role_id: string } }) {
   const access = await requireAnyPermission(req, ["perm.roles.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
 
   const roleId = Number(params.role_id || 0);
   if (!Number.isFinite(roleId) || roleId <= 0) {

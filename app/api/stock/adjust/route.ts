@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     ["perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   let body: Body;

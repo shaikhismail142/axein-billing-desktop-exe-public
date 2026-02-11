@@ -8,7 +8,7 @@ export const revalidate = 0;
 
 export async function POST(req: Request) {
   const access = await requireAnyPermission(req, ["perm.license.manage", "perm.settings.manage"], "Forbidden");
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   await saveActivationRecord({

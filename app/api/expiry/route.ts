@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     ["perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage", "perm.reports.view"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   const url = new URL(req.url);

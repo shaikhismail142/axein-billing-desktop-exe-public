@@ -67,7 +67,7 @@ export async function GET(req: Request) {
       format === "ndjson"
         ? await requireAllPermissions(req, ["perm.logs.view", "perm.logs.export"], "Forbidden")
         : await requireAnyPermission(req, ["perm.logs.view"], "Forbidden");
-    if (!access.ok) return access.response;
+    if ("response" in access) return access.response;
     const businessId = access.ctx.businessId;
 
     const where: string[] = ["business_id = $1"];

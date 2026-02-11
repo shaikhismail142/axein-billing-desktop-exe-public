@@ -8,7 +8,7 @@ import { authenticateLanClient } from "@/app/lib/lan-auth";
 export async function POST(req: Request) {
   const auth = await authenticateLanClient(req);
   if (!auth.ok) {
-    return NextResponse.json({ error: "Unauthorized", reason: auth.reason }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized", reason: "reason" in auth ? auth.reason : "unauthorized" }, { status: 401 });
   }
 
   const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null;

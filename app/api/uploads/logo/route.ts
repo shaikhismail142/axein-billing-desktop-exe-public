@@ -36,7 +36,7 @@ function makeFilename(ext: string) {
 export async function POST(req: Request) {
   try {
     const access = await requireAnyPermission(req, ["perm.settings.manage"], "Forbidden");
-    if (!access.ok) return access.response;
+    if ("response" in access) return access.response;
     const businessId = access.ctx.businessId;
 
     const ctype = req.headers.get("content-type") || "";

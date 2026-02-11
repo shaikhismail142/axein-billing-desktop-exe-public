@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     ["perm.reports.view", "perm.payments.manage", "perm.purchases.manage"],
     "Forbidden"
   );
-  if (!access.ok) return access.response;
+  if ("response" in access) return access.response;
   const businessId = access.ctx.businessId;
 
   const client = await pool.connect();

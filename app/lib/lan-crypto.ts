@@ -30,5 +30,5 @@ export function safeEqHex(a: string, b: string) {
   const aa = Buffer.from(String(a || ""), "hex");
   const bb = Buffer.from(String(b || ""), "hex");
   if (aa.length === 0 || bb.length === 0 || aa.length !== bb.length) return false;
-  return crypto.timingSafeEqual(aa, bb);
+  return crypto.timingSafeEqual(new Uint8Array(aa), new Uint8Array(bb));
 }

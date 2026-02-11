@@ -16,7 +16,7 @@ function json(data: any, status = 200) {
 export async function POST(req: Request) {
   try {
     const access = await requireAnyPermission(req, ["perm.license.manage", "perm.settings.manage"], "Forbidden");
-    if (!access.ok) return access.response;
+    if ("response" in access) return access.response;
 
     // Start (or re-affirm) a 7-day trial; implementation should
     // respect trial_allowed and existing trial state internally.
