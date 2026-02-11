@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { requireRevenueAccess } from "@/app/lib/request-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const access = await requireRevenueAccess(req);
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
   const url = new URL(req.url);
   const days = Math.max(1, Number(url.searchParams.get("days") ?? 30));
   const onlyBelow = (url.searchParams.get("below") ?? "").toLowerCase() === "true";
@@ -18,6 +23,7 @@ export async function GET(req: Request) {
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       WHERE s.invoice_date >= NOW() - INTERVAL '${days} days'
+        AND s.business_id = $1
     )
     SELECT
       p.id,
@@ -27,10 +33,11 @@ export async function GET(req: Request) {
     FROM products p
     LEFT JOIN recent r ON lower(p.name) = r.nm
     WHERE r.nm IS NULL
+      AND p.business_id = $1
       ${onlyBelow ? "AND COALESCE(NULLIF(p.meta->>'stock_qty','')::int, 0) <= COALESCE(NULLIF(p.meta->>'low_stock_threshold','')::int, 0)" : ""}
   `;
 
-  const countRes = await pool.query(`SELECT COUNT(*)::int AS cnt FROM (${baseSql}) x`);
+  const countRes = await pool.query(`SELECT COUNT(*)::int AS cnt FROM (${baseSql}) x`, [businessId]);
   const total = countRes.rows?.[0]?.cnt ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
@@ -38,10 +45,10 @@ export async function GET(req: Request) {
     `
     ${baseSql}
     ORDER BY p.name ASC
-    LIMIT $1 OFFSET $2
+    LIMIT $2 OFFSET $3
     `
     ,
-    [perPage, offset]
+    [businessId, perPage, offset]
   );
 
   return NextResponse.json({

@@ -3,16 +3,24 @@ export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
 import { getTaxReport } from "@/app/lib/tax-report";
+import { requireRevenueAccess } from "@/app/lib/request-access";
 
 export async function GET(req: NextRequest) {
   try {
+    const access = await requireRevenueAccess(req);
+    if (!access.ok) return access.response;
+
     const url = new URL(req.url);
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
     const group = url.searchParams.get("group") === "quarter" ? "quarter" : "month";
     const includeDraft = url.searchParams.get("includeDraft") === "1";
 
-    const data = await getTaxReport(from, to, { group, includeDraft });
+    const data = await getTaxReport(from, to, {
+      group,
+      includeDraft,
+      businessId: access.ctx.businessId,
+    });
 
     return NextResponse.json({
       ok: true,

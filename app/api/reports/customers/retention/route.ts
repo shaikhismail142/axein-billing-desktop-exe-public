@@ -1,11 +1,16 @@
 // app/api/reports/customers/retention/route.ts
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { requireRevenueAccess } from "@/app/lib/request-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const access = await requireRevenueAccess(req);
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
   const url = new URL(req.url);
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
@@ -18,6 +23,7 @@ export async function GET(req: Request) {
       FROM sales s
       WHERE s.invoice_date >= $1::date
         AND s.invoice_date < ($2::date + INTERVAL '1 day')
+        AND s.business_id = $3
         AND s.customer_id IS NOT NULL
       GROUP BY s.customer_id
     ),
@@ -25,6 +31,7 @@ export async function GET(req: Request) {
       SELECT customer_id, MIN(invoice_date)::date AS first_date
       FROM sales
       WHERE customer_id IS NOT NULL
+        AND business_id = $3
       GROUP BY customer_id
     )
     SELECT
@@ -33,7 +40,7 @@ export async function GET(req: Request) {
     FROM orders o
     JOIN first_seen fs ON fs.customer_id = o.customer_id
     `,
-    [from, to]
+    [from, to, businessId]
   );
 
   return NextResponse.json(rows[0] || { new_count: 0, repeat_count: 0 });

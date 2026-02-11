@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { requireRevenueAccess } from "@/app/lib/request-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const access = await requireRevenueAccess(req);
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
   const url = new URL(req.url);
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
@@ -20,10 +25,11 @@ export async function GET(req: Request) {
     JOIN sales s ON s.id = si.sale_id
     WHERE s.invoice_date >= $1::date
       AND s.invoice_date < ($2::date + INTERVAL '1 day')
+      AND s.business_id = $3
     GROUP BY si.name
     ORDER BY qty DESC
     `,
-    [from, to]
+    [from, to, businessId]
   );
 
   return NextResponse.json({ items: rows });

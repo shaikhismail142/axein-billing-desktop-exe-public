@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { requireRevenueAccess } from "@/app/lib/request-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const access = await requireRevenueAccess(req);
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
   const url = new URL(req.url);
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
@@ -15,7 +20,8 @@ export async function GET(req: Request) {
     WITH low_now AS (
       SELECT lower(p.name) AS nm
       FROM products p
-      WHERE COALESCE(NULLIF(p.meta->>'stock_qty','')::int, 0)
+      WHERE p.business_id = $3
+        AND COALESCE(NULLIF(p.meta->>'stock_qty','')::int, 0)
           <= COALESCE(NULLIF(p.meta->>'low_stock_threshold','')::int, 0)
     ),
     sold AS (
@@ -24,6 +30,7 @@ export async function GET(req: Request) {
       JOIN sales s ON s.id = si.sale_id
       WHERE s.invoice_date >= $1::date
         AND s.invoice_date < ($2::date + INTERVAL '1 day')
+        AND s.business_id = $3
       GROUP BY s.invoice_date::date, lower(si.name)
     )
     SELECT d::date AS date, COUNT(*)::int AS low_count
@@ -32,7 +39,7 @@ export async function GET(req: Request) {
     GROUP BY d
     ORDER BY d
     `,
-    [from, to]
+    [from, to, businessId]
   );
 
   return NextResponse.json({ items: rows });

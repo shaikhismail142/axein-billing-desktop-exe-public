@@ -52,22 +52,25 @@ export function normalizeRange(from?: string | null, to?: string | null): { from
 export async function getTaxReport(
   fromRaw?: string | null,
   toRaw?: string | null,
-  opts?: { group?: "month" | "quarter"; includeDraft?: boolean }
+  opts?: { group?: "month" | "quarter"; includeDraft?: boolean; businessId?: number }
 ) {
   const { from, to } = normalizeRange(fromRaw, toRaw);
   const fromDate = toDate(from, false);
   const toDateVal = toDate(to, true);
   const group: "month" | "quarter" = opts?.group === "quarter" ? "quarter" : "month";
   const includeDraft = opts?.includeDraft === true;
+  const businessId = Number(opts?.businessId || 1);
 
   const salesCols = await getColumns("sales");
   const purchaseCols = await getColumns("purchases");
   const hasSalesMeta = salesCols.has("meta");
   const hasSalesInvoiceDate = salesCols.has("invoice_date");
   const hasSalesCreated = salesCols.has("created_at");
+  const hasSalesBusiness = salesCols.has("business_id");
   const hasPurchStatus = purchaseCols.has("status");
   const hasPurchBill = purchaseCols.has("bill_date");
   const hasPurchCreated = purchaseCols.has("created_at");
+  const hasPurchBusiness = purchaseCols.has("business_id");
 
   const salesGroupExpr = group === "quarter"
     ? `date_trunc('quarter', ${hasSalesInvoiceDate ? "COALESCE(invoice_date, created_at)" : hasSalesCreated ? "created_at" : "now()"})::date`
@@ -99,9 +102,10 @@ export async function getTaxReport(
        FROM sales
       WHERE ${salesDateExpr} >= $1
         AND ${salesDateExpr} <= $2
+        ${hasSalesBusiness ? "AND business_id = $3" : ""}
       GROUP BY 1
       ORDER BY 1`,
-    [fromDate, toDateVal]
+    hasSalesBusiness ? [fromDate, toDateVal, businessId] : [fromDate, toDateVal]
   );
 
   const purchaseRows = await pool.query(
@@ -110,9 +114,10 @@ export async function getTaxReport(
        FROM purchases
       WHERE ${purchaseDateExpr} >= $1
         AND ${purchaseDateExpr} <= $2
+        ${hasPurchBusiness ? "AND business_id = $4" : ""}
       GROUP BY 1
       ORDER BY 1`,
-    [fromDate, toDateVal, includeDraft]
+    hasPurchBusiness ? [fromDate, toDateVal, includeDraft, businessId] : [fromDate, toDateVal, includeDraft]
   );
 
   const monthMap = new Map<string, TaxMonth>();

@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { NextRequest } from "next/server";
 import { getTaxReport } from "@/app/lib/tax-report";
+import { requireRevenueAccess } from "@/app/lib/request-access";
 
 function csvEscape(v: any) {
   const s = String(v ?? "");
@@ -13,6 +14,9 @@ function csvEscape(v: any) {
 }
 
 export async function GET(req: NextRequest) {
+  const access = await requireRevenueAccess(req);
+  if (!access.ok) return access.response;
+
   const url = new URL(req.url);
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
@@ -20,7 +24,11 @@ export async function GET(req: NextRequest) {
   const includeDraft = url.searchParams.get("includeDraft") === "1";
   const format = (url.searchParams.get("format") || "csv").toLowerCase();
 
-  const data = await getTaxReport(from, to, { group, includeDraft });
+  const data = await getTaxReport(from, to, {
+    group,
+    includeDraft,
+    businessId: access.ctx.businessId,
+  });
   const { summary, months } = data;
 
   const lines: string[] = [];

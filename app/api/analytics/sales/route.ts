@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
+import { requireRevenueAccess } from "@/app/lib/request-access";
 
 const VERSION = "r8c"; // conditional-join + from-clause-safe
 
@@ -13,6 +14,10 @@ function defaultWindow() {
 }
 
 export async function GET(req: Request) {
+  const access = await requireRevenueAccess(req);
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
   const { searchParams } = new URL(req.url);
   const qFrom = searchParams.get("from");
   const qTo = searchParams.get("to");
@@ -23,6 +28,7 @@ export async function GET(req: Request) {
     echo: { from: qFrom, to: qTo, debug: debugFlag },
     window: win,
     version: VERSION,
+    businessId,
   };
 
   const client = await pool.connect();
@@ -65,6 +71,7 @@ export async function GET(req: Request) {
         WHERE table_schema='public' AND table_name='sales'`
     );
     const salesCols: string[] = salesColsProbe.rows.map((r: any) => r.column_name);
+    const hasSalesBusiness = salesCols.includes("business_id");
     const dateCandidates = ["invoice_date", "date", "bill_date", "sale_date", "sales_date", "created_at"];
     const presentDates = dateCandidates.filter(c => salesCols.includes(c));
     const sdateExpr = presentDates.length
@@ -74,6 +81,7 @@ export async function GET(req: Request) {
     debug.salesTotalCol = salesTotalCol;
     debug.salesDateExpr = sdateExpr;
     debug.salesDateCandidates = presentDates;
+    debug.salesBusinessScoped = hasSalesBusiness;
 
     // 4) sale_items columns & join keys
     let itemsJoinKey: string | null = null;
@@ -151,6 +159,8 @@ export async function GET(req: Request) {
     const useSalesTotals = !useItems && !!salesTotalCol;
     const usePayments = !useItems && !useSalesTotals && paymentsCount > 0 && !!paymentsJoinKey;
     debug.strategy = { useItems, useSalesTotals, usePayments };
+    const salesBizFilterWindow = hasSalesBusiness ? "AND s.business_id = $3" : "";
+    const salesBizFilterToday = hasSalesBusiness ? "AND s.business_id = $2" : "";
 
     // 7) DAILY
     const dailySql = useItems
@@ -165,6 +175,7 @@ export async function GET(req: Request) {
           JOIN sale_items si ON si.${itemsJoinKey} = s.id
           ${productsJoin}
           WHERE (${sdateExpr}) BETWEEN (SELECT dfrom FROM bounds) AND (SELECT dto FROM bounds)
+            ${salesBizFilterWindow}
         )
         SELECT to_char(d.day,'YYYY-MM-DD') AS day, COALESCE(SUM(j.line_total),0) AS total
         FROM days d LEFT JOIN joined j ON j.sdate = d.day
@@ -179,6 +190,7 @@ export async function GET(req: Request) {
         FROM days d
         LEFT JOIN sales s ON (${sdateExpr}) = d.day
          AND d.day BETWEEN (SELECT dfrom FROM bounds) AND (SELECT dto FROM bounds)
+         ${salesBizFilterWindow}
         GROUP BY d.day ORDER BY d.day;
       `
       : usePayments
@@ -192,6 +204,7 @@ export async function GET(req: Request) {
           FROM sales s
           JOIN sale_payments sp ON sp.${paymentsJoinKey} = s.id
           WHERE (${sdateExpr}) BETWEEN (SELECT dfrom FROM bounds) AND (SELECT dto FROM bounds)
+            ${salesBizFilterWindow}
         )
         SELECT to_char(d.day,'YYYY-MM-DD') AS day, COALESCE(SUM(j.paid),0) AS total
         FROM days d LEFT JOIN joined j ON j.sdate = d.day
@@ -212,6 +225,7 @@ export async function GET(req: Request) {
           JOIN sale_items si ON si.${itemsJoinKey} = s.id
           ${productsJoin2}
           WHERE (${sdateExpr}) BETWEEN $1::date AND $2::date
+            ${salesBizFilterWindow}
         )
         SELECT name, COALESCE(SUM(qty),0) AS qty, COALESCE(SUM(line_total),0) AS total
         FROM joined
@@ -231,6 +245,7 @@ export async function GET(req: Request) {
           FROM sales s
           JOIN sale_items si ON si.${itemsJoinKey} = s.id
           WHERE (${sdateExpr}) = $1::date
+            ${salesBizFilterToday}
         )
         SELECT COALESCE(SUM(line_total),0) AS sales_total, COALESCE(SUM(gp),0) AS gross_profit FROM rows;
       `
@@ -238,22 +253,27 @@ export async function GET(req: Request) {
       ? `
         SELECT COALESCE(SUM(${salesTotalCol}),0)::numeric AS sales_total, 0::numeric AS gross_profit
         FROM sales s
-        WHERE (${sdateExpr}) = $1::date;
+        WHERE (${sdateExpr}) = $1::date
+          ${salesBizFilterToday};
       `
       : usePayments
       ? `
         SELECT COALESCE(SUM(COALESCE(sp.amount, sp.total, 0)),0)::numeric AS sales_total, 0::numeric AS gross_profit
         FROM sales s
         JOIN sale_payments sp ON sp.${paymentsJoinKey} = s.id
-        WHERE (${sdateExpr}) = $1::date;
+        WHERE (${sdateExpr}) = $1::date
+          ${salesBizFilterToday};
       `
       : `SELECT 0::numeric AS sales_total, 0::numeric AS gross_profit`;
 
     // Execute
+    const paramsWindow = hasSalesBusiness ? [win.from, win.to, businessId] : [win.from, win.to];
+    const paramsToday = hasSalesBusiness ? [win.to, businessId] : [win.to];
+
     const [dailyRes, breakdownRes, todayRes] = await Promise.all([
-      client.query(dailySql, [win.from, win.to]),
-      breakdownSql ? client.query(breakdownSql, [win.from, win.to]) : Promise.resolve({ rows: [] }),
-      client.query(todaySql, [win.to]),
+      client.query(dailySql, paramsWindow),
+      breakdownSql ? client.query(breakdownSql, paramsWindow) : Promise.resolve({ rows: [] }),
+      client.query(todaySql, paramsToday),
     ]);
 
     // 10) Extra debug sample (only when requested)
@@ -267,10 +287,11 @@ export async function GET(req: Request) {
         JOIN sale_items si ON si.${itemsJoinKey} = s.id
         ${productsJoin3}
         WHERE (${sdateExpr}) BETWEEN $1::date AND $2::date
+          ${salesBizFilterWindow}
         ORDER BY 1 DESC
         LIMIT 5
         `,
-        [win.from, win.to],
+        paramsWindow,
       );
       debug.dailySample = sampleDaily.rows;
     }

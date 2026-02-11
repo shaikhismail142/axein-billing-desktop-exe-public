@@ -3,8 +3,13 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { requireRevenueAccess } from "@/app/lib/request-access";
 
 export async function GET(req: Request) {
+  const access = await requireRevenueAccess(req);
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
   const { searchParams } = new URL(req.url);
   const from = searchParams.get("from"); // YYYY-MM-DD
   const to = searchParams.get("to");     // YYYY-MM-DD
@@ -30,11 +35,12 @@ export async function GET(req: Request) {
     LEFT JOIN products p ON lower(p.name) = lower(si.name)
     WHERE (COALESCE(s.invoice_date, s.created_at) AT TIME ZONE 'Asia/Kolkata')::date
           BETWEEN $1::date AND $2::date
+      AND s.business_id = $3
     GROUP BY 1
     ORDER BY total DESC
   `;
 
-  const { rows } = await pool.query(q, [dateFrom, dateTo]);
+  const { rows } = await pool.query(q, [dateFrom, dateTo, businessId]);
 
   const data = rows.map(r => ({
     product_name: r.product_name as string,
