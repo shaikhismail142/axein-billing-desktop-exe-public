@@ -6,10 +6,13 @@ type LanStatus = {
   business_id: number;
   seat_usage?: {
     seat_limit: number;
+    computer_limit: number;
     active_users: number;
     active_clients: number;
     used_seats: number;
     remaining_seats: number;
+    active_computers: number;
+    remaining_computers: number;
   } | null;
   host: null | {
     host_uid: string;
@@ -52,6 +55,8 @@ export default function ProfileNetworkPage() {
   const [pairingMeta, setPairingMeta] = useState<string>("");
   const [roleByClient, setRoleByClient] = useState<Record<string, string>>({});
   const seatsFull = (status?.seat_usage?.remaining_seats ?? 1) <= 0;
+  const computersFull = (status?.seat_usage?.remaining_computers ?? 1) <= 0;
+  const capacityBlocked = seatsFull || computersFull;
 
   const [cfg, setCfg] = useState({
     host_name: "",
@@ -205,10 +210,13 @@ export default function ProfileNetworkPage() {
           <span className="muted">
             Seat Usage: {Number(status?.seat_usage?.used_seats || 0)}/{Number(status?.seat_usage?.seat_limit || 0)}
           </span>
+          <span className="muted">
+            Computer Usage: {Number(status?.seat_usage?.active_computers || 0)}/{Number(status?.seat_usage?.computer_limit || 0)}
+          </span>
         </div>
-        {seatsFull ? (
+        {capacityBlocked ? (
           <div style={{ color: "var(--warning)", marginTop: 8 }}>
-            Seat limit reached. Pairing and approvals are blocked until seats are freed or license is upgraded.
+            Capacity limit reached. Pairing and approvals are blocked until seats/computers are freed or license is upgraded.
           </div>
         ) : null}
       </div>
@@ -246,7 +254,7 @@ export default function ProfileNetworkPage() {
             Require approval
           </label>
           <button className="btn" disabled={busy} onClick={saveConfig}>Save Host Config</button>
-          <button className="btn" disabled={busy || seatsFull} onClick={generatePairingCode}>Generate Pairing Code</button>
+          <button className="btn" disabled={busy || capacityBlocked} onClick={generatePairingCode}>Generate Pairing Code</button>
         </div>
 
         {pairingCode ? (
@@ -303,7 +311,7 @@ export default function ProfileNetworkPage() {
                         <button className="btn" disabled={busy} onClick={() => updateRole(c.client_uid)}>Save Role</button>
                       ) : null}
                       {c.status === "pending" ? (
-                        <button className="btn" disabled={busy || seatsFull} onClick={() => approve(c.client_uid)}>Approve</button>
+                        <button className="btn" disabled={busy || capacityBlocked} onClick={() => approve(c.client_uid)}>Approve</button>
                       ) : null}
                       {c.status === "active" ? (
                         <button className="btn" disabled={busy} onClick={() => revoke(c.client_uid)}>Revoke</button>

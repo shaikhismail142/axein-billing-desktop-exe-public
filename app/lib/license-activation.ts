@@ -15,6 +15,7 @@ export type LicensePayload = {
   usage_mode?: string;
   installation_scope?: string;
   user_limit?: number;
+  computer_limit?: number;
   valid_from?: string;
   issued_at?: string;
   features?: string[];
@@ -54,6 +55,28 @@ function canonicalV1(payload: Omit<LicensePayload, "signature">): string {
 }
 
 function canonicalV2(payload: Omit<LicensePayload, "signature">): string {
+  const normalized = {
+    v: 2,
+    license_key: String(payload.license_key || ""),
+    email: String(payload.email || ""),
+    expires_at: String(payload.expires_at || ""),
+    business_name: String(payload.business_name || ""),
+    business_type: String(payload.business_type || ""),
+    license_type: String(payload.license_type || ""),
+    usage_mode: String(payload.usage_mode || ""),
+    installation_scope: String(payload.installation_scope || ""),
+    user_limit: Number(payload.user_limit || 0),
+    computer_limit: Number(payload.computer_limit || 0),
+    valid_from: String(payload.valid_from || ""),
+    issued_at: String(payload.issued_at || ""),
+    features: Array.isArray(payload.features)
+      ? payload.features.map((x) => String(x)).sort()
+      : [],
+  };
+  return JSON.stringify(normalized);
+}
+
+function canonicalV2Legacy(payload: Omit<LicensePayload, "signature">): string {
   const normalized = {
     v: 2,
     license_key: String(payload.license_key || ""),
@@ -145,7 +168,7 @@ export function verifySignatureEd25519(
   });
 
   const signature = Uint8Array.from(Buffer.from(signatureB64, "base64"));
-  const candidates = [canonicalV2(payload), canonicalV1(payload)];
+  const candidates = [canonicalV2(payload), canonicalV2Legacy(payload), canonicalV1(payload)];
 
   for (const candidate of candidates) {
     const data = new TextEncoder().encode(candidate);

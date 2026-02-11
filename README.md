@@ -5,7 +5,6 @@ Desktop-first AxEin Billing distribution for Windows 10/11 (with macOS-ready arc
 ## Product posture
 - Primary runtime: Tauri desktop shell + local bundled app runtime.
 - Customer runtime: no Docker required.
-- Legacy Docker/bootstrap assets are archived under `legacy/` for reference only.
 
 ## Core desktop commands
 ```bash
@@ -35,7 +34,6 @@ npm run desktop:release:metadata
 - `desktop/`: desktop shell, packaging config, runtime scripts.
 - `db/`: SQL migrations.
 - `tools/license-keygen/`: staff key generation utilities.
-- `legacy/`: archived Docker and legacy bootstrap assets.
 
 ## Note
 This repository is the dedicated EXE track and is independent from Docker-centric deployment flows.

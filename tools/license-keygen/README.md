@@ -30,6 +30,7 @@ This captures:
 - business type
 - usage mode
 - seat/user limit
+- computer limit (host + LAN clients)
 - license type
 - validity period
 - installation scope
@@ -44,6 +45,7 @@ node tools/license-keygen/issue-license.js issue \
   --business-type clinic \
   --usage-mode standalone \
   --users 10 \
+  --computers 1 \
   --license-type pro \
   --months 12 \
   --scope business_lan \

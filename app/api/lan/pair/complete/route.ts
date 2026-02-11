@@ -93,6 +93,16 @@ export async function POST(req: Request) {
         { status: 403 }
       );
     }
+    if (seatUsage.active_computers >= seatUsage.computer_limit) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error: `Computer limit reached (${seatUsage.computer_limit}). Increase licensed computers to add more PCs.`,
+          seat_usage: seatUsage,
+        },
+        { status: 403 }
+      );
+    }
 
     const clientUid = randomId("client");
     const clientToken = randomToken(24);

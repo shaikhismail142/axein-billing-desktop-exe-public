@@ -23,10 +23,13 @@ type BusinessUser = {
 
 type SeatUsage = {
   seat_limit: number;
+  computer_limit: number;
   active_users: number;
   active_clients: number;
   used_seats: number;
   remaining_seats: number;
+  active_computers: number;
+  remaining_computers: number;
 };
 
 type PermissionCatalogRow = {
@@ -263,6 +266,9 @@ export default function ProfileUsersPage() {
         <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
           Seat usage: {seatUsage?.used_seats ?? 0}/{seatUsage?.seat_limit ?? 0}
           {" "}({seatUsage?.active_users ?? 0} users + {seatUsage?.active_clients ?? 0} LAN devices)
+        </div>
+        <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+          Computer usage: {seatUsage?.active_computers ?? 0}/{seatUsage?.computer_limit ?? 0} (host + LAN clients)
         </div>
         {seatsFull ? (
           <div style={{ marginTop: 8, color: "var(--warning)" }}>

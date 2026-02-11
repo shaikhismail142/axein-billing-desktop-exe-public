@@ -7,6 +7,7 @@ type FormState = {
   business_name: string;
   business_type: string;
   user_limit: number;
+  computer_limit: number;
   license_plan_intent: string;
   usage_mode: "standalone" | "lan_host";
   owner_name: string;
@@ -36,6 +37,7 @@ export default function RegisterBusinessPage() {
     business_name: "",
     business_type: "general_store",
     user_limit: 5,
+    computer_limit: 1,
     license_plan_intent: "starter",
     usage_mode: "standalone",
     owner_name: "",
@@ -62,6 +64,7 @@ export default function RegisterBusinessPage() {
           business_name: form.business_name,
           business_type: form.business_type,
           user_limit: form.user_limit,
+          computer_limit: form.computer_limit,
           license_plan_intent: form.license_plan_intent,
           usage_mode: form.usage_mode,
           owner: {
@@ -88,7 +91,7 @@ export default function RegisterBusinessPage() {
       <div className="card" style={{ padding: 16, maxWidth: 940, margin: "0 auto" }}>
         <h1 style={{ margin: 0 }}>Register Business</h1>
         <p className="muted" style={{ marginTop: 8 }}>
-          Configure business type, user seats, and owner account.
+          Configure business type, user seats, computer capacity, and owner account.
         </p>
 
         <form onSubmit={submit} style={{ marginTop: 12, display: "grid", gap: 12 }}>
@@ -110,8 +113,23 @@ export default function RegisterBusinessPage() {
               <input className="input" type="number" min={1} value={form.user_limit} onChange={(e) => update("user_limit", Number(e.target.value) || 1)} />
             </label>
             <label>
+              <div className="muted">No. of Computers</div>
+              <input className="input" type="number" min={1} value={form.computer_limit} onChange={(e) => update("computer_limit", Number(e.target.value) || 1)} />
+            </label>
+            <label>
               <div className="muted">Usage Mode</div>
-              <select className="input" value={form.usage_mode} onChange={(e) => update("usage_mode", e.target.value as any)}>
+              <select
+                className="input"
+                value={form.usage_mode}
+                onChange={(e) => {
+                  const mode = e.target.value as FormState["usage_mode"];
+                  setForm((s) => ({
+                    ...s,
+                    usage_mode: mode,
+                    computer_limit: mode === "standalone" ? 1 : Math.max(2, s.computer_limit),
+                  }));
+                }}
+              >
                 <option value="standalone">Standalone (Single PC)</option>
                 <option value="lan_host">LAN Host (Multi-PC)</option>
               </select>

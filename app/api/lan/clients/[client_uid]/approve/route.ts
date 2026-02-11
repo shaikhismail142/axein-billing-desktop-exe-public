@@ -49,6 +49,16 @@ export async function POST(req: NextRequest, { params }: { params: { client_uid:
           { status: 403 }
         );
       }
+      if (seatUsage.active_computers >= seatUsage.computer_limit) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          {
+            error: `Computer limit reached (${seatUsage.computer_limit}). Increase licensed computers to add more PCs.`,
+            seat_usage: seatUsage,
+          },
+          { status: 403 }
+        );
+      }
 
       await client.query(
         `UPDATE lan_clients

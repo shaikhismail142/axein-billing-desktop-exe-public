@@ -128,6 +128,7 @@ export async function POST(req: Request) {
       usage_mode: normalized.usage_mode ? String(normalized.usage_mode) : undefined,
       installation_scope: normalized.installation_scope ? String(normalized.installation_scope) : undefined,
       user_limit: normalized.user_limit != null ? Number(normalized.user_limit) : undefined,
+      computer_limit: normalized.computer_limit != null ? Number(normalized.computer_limit) : undefined,
       valid_from: normalized.valid_from ? String(normalized.valid_from) : undefined,
       issued_at: normalized.issued_at ? String(normalized.issued_at) : undefined,
       features: Array.isArray(normalized.features)
@@ -165,6 +166,7 @@ export async function POST(req: Request) {
         return bad("License business mismatch", 403);
       }
       const userLimit = Math.max(1, Number(licensePayload.user_limit || 1));
+      const computerLimit = Math.max(1, Number(licensePayload.computer_limit || 1));
       const licenseType = String(licensePayload.license_type || "standard");
       const installationScope = String(licensePayload.installation_scope || "single_pc");
       const validFrom = licensePayload.valid_from ? new Date(licensePayload.valid_from).toISOString() : null;
@@ -172,13 +174,14 @@ export async function POST(req: Request) {
 
       await pool.query(
         `INSERT INTO licenses
-          (business_id, license_key, license_type, user_limit, valid_from, valid_to, status, installation_scope, payload_json)
+          (business_id, license_key, license_type, user_limit, computer_limit, valid_from, valid_to, status, installation_scope, payload_json)
          VALUES
-          ($1, $2, $3, $4, $5, $6, 'active', $7, $8::jsonb)
+          ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9::jsonb)
          ON CONFLICT (business_id, license_key)
          DO UPDATE SET
             license_type = EXCLUDED.license_type,
             user_limit = EXCLUDED.user_limit,
+            computer_limit = EXCLUDED.computer_limit,
             valid_from = EXCLUDED.valid_from,
             valid_to = EXCLUDED.valid_to,
             status = EXCLUDED.status,
@@ -190,6 +193,7 @@ export async function POST(req: Request) {
           licensePayload.license_key,
           licenseType,
           userLimit,
+          computerLimit,
           validFrom,
           validTo,
           installationScope,
@@ -200,9 +204,10 @@ export async function POST(req: Request) {
       await pool.query(
         `UPDATE businesses
             SET user_limit = $2,
+                computer_limit = $3,
                 updated_at = NOW()
           WHERE id = $1`,
-        [businessId, userLimit]
+        [businessId, userLimit, computerLimit]
       );
     } catch {
       // keep legacy activation path functional when new schema is not applied yet

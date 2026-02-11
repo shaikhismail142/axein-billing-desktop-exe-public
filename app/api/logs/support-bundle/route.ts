@@ -20,14 +20,30 @@ export async function GET(req: Request) {
   const logsLimit = parseLimit(url.searchParams.get("logs_limit"), 1000, 5000);
   const auditLimit = parseLimit(url.searchParams.get("audit_limit"), 500, 3000);
 
+  const businessQuery = (async () => {
+    try {
+      return await pool.query(
+        `SELECT id, code, name, business_type, usage_mode, user_limit, computer_limit, updated_at
+           FROM businesses
+          WHERE id = $1
+          LIMIT 1`,
+        [businessId]
+      );
+    } catch (err) {
+      const message = String((err as { message?: string } | null)?.message || "").toLowerCase();
+      if (!(message.includes("computer_limit") && message.includes("does not exist"))) throw err;
+      return pool.query(
+        `SELECT id, code, name, business_type, usage_mode, user_limit, updated_at
+           FROM businesses
+          WHERE id = $1
+          LIMIT 1`,
+        [businessId]
+      );
+    }
+  })();
+
   const [businessRs, appLogsRs, auditRs, lanRs, activationRs] = await Promise.all([
-    pool.query(
-      `SELECT id, code, name, business_type, usage_mode, user_limit, updated_at
-         FROM businesses
-        WHERE id = $1
-        LIMIT 1`,
-      [businessId]
-    ),
+    businessQuery,
     pool.query(
       `SELECT id, created_at, level, source, event_code, message, context_json
          FROM app_logs

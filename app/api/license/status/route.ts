@@ -5,6 +5,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { getActivationStatus, getActivationRecord } from '@/app/lib/license-activation';
 import { pool } from '@/lib/db';
+import { resolveSeatUsage } from '@/app/lib/seat-limits';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -38,21 +39,13 @@ export async function GET() {
     // Treat undefined as true for backward compatibility.
     const trialEnabled = rec?.trial_allowed !== false;
     const businessId = Number(rec?.license?.business_id || 1);
-    const seatLimit = rec?.license?.user_limit != null ? Number(rec.license.user_limit) : null;
-
-    let activeUsers = null as number | null;
+    const fallbackSeatLimit = rec?.license?.user_limit != null ? Number(rec.license.user_limit) : null;
+    const fallbackComputerLimit = rec?.license?.computer_limit != null ? Number(rec.license.computer_limit) : null;
+    let seatUsage = null as Awaited<ReturnType<typeof resolveSeatUsage>> | null;
     try {
-      const rs = await pool.query(
-        `SELECT COUNT(*)::int AS active_users
-           FROM users
-          WHERE business_id = $1
-            AND status = 'active'`,
-        [businessId]
-      );
-      activeUsers = Number(rs.rows?.[0]?.active_users || 0);
+      seatUsage = await resolveSeatUsage(pool, businessId);
     } catch {
-      // Keep status endpoint backward compatible where users table is not present yet.
-      activeUsers = null;
+      seatUsage = null;
     }
 
     // Panel wants these exact names:
@@ -72,10 +65,19 @@ export async function GET() {
       trialEnabled,
       trialDays: 7, // fixed window
       serverTimeUTC: new Date().toISOString(),
-      seatLimit,
-      activeUsers,
+      seatLimit: seatUsage?.seat_limit ?? fallbackSeatLimit,
+      activeUsers: seatUsage?.active_users ?? null,
+      activeClients: seatUsage?.active_clients ?? null,
+      computerLimit: seatUsage?.computer_limit ?? fallbackComputerLimit,
+      activeComputers: seatUsage?.active_computers ?? null,
       seatsAvailable:
-        seatLimit != null && activeUsers != null ? Math.max(0, seatLimit - activeUsers) : null,
+        seatUsage != null
+          ? seatUsage.remaining_seats
+          : null,
+      computersAvailable:
+        seatUsage != null
+          ? seatUsage.remaining_computers
+          : null,
 
       // structured status for newer callers
       status,

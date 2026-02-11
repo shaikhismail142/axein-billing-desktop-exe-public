@@ -14,6 +14,7 @@ type RegisterBody = {
   business_name?: string;
   business_type?: string;
   user_limit?: number;
+  computer_limit?: number;
   license_plan_intent?: string;
   usage_mode?: "standalone" | "lan_host";
   owner?: {
@@ -39,6 +40,11 @@ function safeInt(v: unknown, fallback: number) {
   return Math.floor(n);
 }
 
+function isMissingComputerLimitColumn(err: unknown) {
+  const message = String((err as { message?: string } | null)?.message || "").toLowerCase();
+  return message.includes("computer_limit") && message.includes("does not exist");
+}
+
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as RegisterBody;
 
@@ -46,6 +52,8 @@ export async function POST(req: Request) {
   const businessType = String(body.business_type || "").trim();
   const usageMode = body.usage_mode === "lan_host" ? "lan_host" : "standalone";
   const userLimit = safeInt(body.user_limit, 5);
+  const defaultComputerLimit = usageMode === "lan_host" ? 3 : 1;
+  const computerLimit = safeInt(body.computer_limit, defaultComputerLimit);
   const ownerName = String(body.owner?.full_name || "").trim();
   const ownerEmail = String(body.owner?.email || "").trim().toLowerCase();
   const ownerPhone = String(body.owner?.phone || "").trim() || null;
@@ -79,22 +87,44 @@ export async function POST(req: Request) {
     const cnt = Number(codeCandidateRs.rows?.[0]?.cnt || 0);
     const code = cnt > 0 ? `${codeBase}-${Date.now().toString().slice(-6)}` : codeBase;
 
-    const businessRs = await client.query(
-      `INSERT INTO businesses
-         (code, name, business_type, user_limit, license_plan_intent, usage_mode, config_json)
-       VALUES
-         ($1, $2, $3, $4, $5, $6, $7::jsonb)
-       RETURNING id, code, name, business_type, user_limit`,
-      [
-        code,
-        businessName,
-        businessType,
-        userLimit,
-        body.license_plan_intent || null,
-        usageMode,
-        JSON.stringify({ template: template.key, template_version: 1 }),
-      ]
-    );
+    let businessRs;
+    try {
+      businessRs = await client.query(
+        `INSERT INTO businesses
+           (code, name, business_type, user_limit, computer_limit, license_plan_intent, usage_mode, config_json)
+         VALUES
+           ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+         RETURNING id, code, name, business_type, user_limit, computer_limit`,
+        [
+          code,
+          businessName,
+          businessType,
+          userLimit,
+          Math.max(1, computerLimit),
+          body.license_plan_intent || null,
+          usageMode,
+          JSON.stringify({ template: template.key, template_version: 1 }),
+        ]
+      );
+    } catch (err) {
+      if (!isMissingComputerLimitColumn(err)) throw err;
+      businessRs = await client.query(
+        `INSERT INTO businesses
+           (code, name, business_type, user_limit, license_plan_intent, usage_mode, config_json)
+         VALUES
+           ($1, $2, $3, $4, $5, $6, $7::jsonb)
+         RETURNING id, code, name, business_type, user_limit`,
+        [
+          code,
+          businessName,
+          businessType,
+          userLimit,
+          body.license_plan_intent || null,
+          usageMode,
+          JSON.stringify({ template: template.key, template_version: 1 }),
+        ]
+      );
+    }
     const business = businessRs.rows[0];
 
     await client.query(
@@ -200,7 +230,15 @@ export async function POST(req: Request) {
     await client.query(
       `INSERT INTO audit_logs (business_id, actor_user_id, action, entity_type, entity_id, meta_json)
        VALUES ($1, $2, 'business.register', 'business', $1::text, $3::jsonb)`,
-      [business.id, owner.id, JSON.stringify({ business_type: businessType, user_limit: userLimit })]
+      [
+        business.id,
+        owner.id,
+        JSON.stringify({
+          business_type: businessType,
+          user_limit: userLimit,
+          computer_limit: Math.max(1, computerLimit),
+        }),
+      ]
     );
 
     await client.query("COMMIT");

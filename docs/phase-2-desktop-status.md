@@ -37,6 +37,9 @@
 25. Added shared seat-limit resolution (`users + LAN clients`) and enforced it across signup, admin create/approve user flows, LAN pair/approve flows, and profile user-access UI seat visibility.
 26. Extended LAN status/profile network module with seat usage telemetry and active pairing-session visibility, and blocked pairing/approval actions in UI when seat capacity is exhausted.
 27. Added explicit pending-user rejection workflow (`/api/admin/users/[id]/reject`) with audit logging, and standardized pending/approve RBAC checks through shared request-access guards.
+28. Added computer-limit licensing model (host + LAN clients) across onboarding, license payload signing/verification, local activation metadata, status/support endpoints, and LAN pair/approve enforcement.
+29. Added DB migration `20260213_add_computer_limits.sql` and compatibility fallbacks for environments that have not yet applied the migration.
+30. Removed archived legacy Docker/bootstrap assets and stale installer/license artifacts from the EXE repository tree.
 
 ## Pending (Next phase)
 1. Run Tauri native build on Windows build machine and produce signed NSIS installer artifacts.

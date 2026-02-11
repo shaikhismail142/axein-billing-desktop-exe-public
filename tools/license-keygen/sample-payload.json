@@ -6,6 +6,7 @@
   "business_type": "general_store",
   "usage_mode": "standalone",
   "user_limit": 5,
+  "computer_limit": 1,
   "license_type": "pro",
   "valid_from": "2026-02-11T00:00:00.000Z",
   "expires_at": "2027-02-11T00:00:00.000Z",

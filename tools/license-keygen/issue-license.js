@@ -75,6 +75,28 @@ function canonicalV2(payload) {
     usage_mode: String(payload.usage_mode || ""),
     installation_scope: String(payload.installation_scope || ""),
     user_limit: Number(payload.user_limit || 0),
+    computer_limit: Number(payload.computer_limit || 0),
+    valid_from: String(payload.valid_from || ""),
+    issued_at: String(payload.issued_at || ""),
+    features: Array.isArray(payload.features)
+      ? payload.features.map((x) => String(x)).sort()
+      : [],
+  };
+  return JSON.stringify(normalized);
+}
+
+function canonicalV2Legacy(payload) {
+  const normalized = {
+    v: 2,
+    license_key: String(payload.license_key || ""),
+    email: String(payload.email || ""),
+    expires_at: String(payload.expires_at || ""),
+    business_name: String(payload.business_name || ""),
+    business_type: String(payload.business_type || ""),
+    license_type: String(payload.license_type || ""),
+    usage_mode: String(payload.usage_mode || ""),
+    installation_scope: String(payload.installation_scope || ""),
+    user_limit: Number(payload.user_limit || 0),
     valid_from: String(payload.valid_from || ""),
     issued_at: String(payload.issued_at || ""),
     features: Array.isArray(payload.features)
@@ -137,9 +159,12 @@ async function promptInteractive(defaults = {}) {
 
   const usage_mode_input = await q(`Usage mode (standalone|lan_host) [standalone]: `);
   const usage_mode = usage_mode_input === "lan_host" ? "lan_host" : "standalone";
+  const defaultComputerLimit = usage_mode === "lan_host" ? "3" : "1";
 
   let user_limit = await q(`Number of users/seats [5]: `);
   if (!user_limit) user_limit = "5";
+  let computer_limit = await q(`Number of computers (host + LAN clients) [${defaultComputerLimit}]: `);
+  if (!computer_limit) computer_limit = defaultComputerLimit;
 
   const license_type = (await q(`License type (basic|pro|enterprise) [basic]: `)) || "basic";
 
@@ -151,8 +176,9 @@ async function promptInteractive(defaults = {}) {
   let period_months = await q(`Validity period in months [12]: `);
   if (!period_months) period_months = "12";
 
+  const defaultScope = usage_mode === "lan_host" ? "business_lan" : "single_pc";
   const installation_scope =
-    (await q(`Installation scope (single_pc|business_lan) [single_pc]: `)) || "single_pc";
+    (await q(`Installation scope (single_pc|business_lan) [${defaultScope}]: `)) || defaultScope;
 
   const featuresRaw = await q(`Features (comma separated, optional): `);
   const features = featuresRaw
@@ -175,6 +201,7 @@ async function promptInteractive(defaults = {}) {
     business_type,
     usage_mode,
     user_limit: Math.max(1, Number(user_limit) || 1),
+    computer_limit: Math.max(1, Number(computer_limit) || 1),
     license_type: license_type.trim() || "basic",
     valid_from,
     expires_at: end.toISOString(),
@@ -232,8 +259,10 @@ function payloadFromArgs(args) {
   const business_type = String(args["business-type"] || "general_store").trim();
   const usage_mode = String(args["usage-mode"] || "standalone").trim();
   const user_limit = Math.max(1, Number(args.users || 1));
+  const defaultComputerLimit = usage_mode === "lan_host" ? 3 : 1;
+  const computer_limit = Math.max(1, Number(args.computers || defaultComputerLimit));
   const license_type = String(args["license-type"] || "basic").trim();
-  const installation_scope = String(args.scope || "single_pc").trim();
+  const installation_scope = String(args.scope || (usage_mode === "lan_host" ? "business_lan" : "single_pc")).trim();
   const months = Math.max(1, Number(args.months || 12));
   const fromDate = String(args.from || "").trim();
   const valid_from = /^\d{4}-\d{2}-\d{2}$/.test(fromDate)
@@ -257,6 +286,7 @@ function payloadFromArgs(args) {
     business_type: BUSINESS_TYPES.includes(business_type) ? business_type : "general_store",
     usage_mode: usage_mode === "lan_host" ? "lan_host" : "standalone",
     user_limit,
+    computer_limit,
     license_type,
     valid_from,
     expires_at: end.toISOString(),
@@ -301,6 +331,7 @@ async function cmdIssue(args) {
       `license_type=${payload.license_type}`,
       `usage_mode=${payload.usage_mode}`,
       `user_limit=${payload.user_limit}`,
+      `computer_limit=${payload.computer_limit}`,
       `valid_from=${payload.valid_from}`,
       `expires_at=${payload.expires_at}`,
       `installation_scope=${payload.installation_scope}`,
@@ -336,10 +367,11 @@ async function cmdVerify(args) {
 
   const pub = loadPublicKey();
   const okV2 = verifyWithCanonical(pub, canonicalV2(payload), signature);
+  const okV2Legacy = verifyWithCanonical(pub, canonicalV2Legacy(payload), signature);
   const okV1 = verifyWithCanonical(pub, canonicalV1(payload), signature);
 
-  console.log(okV2 || okV1 ? "Signature OK" : "Signature INVALID");
-  console.log(`Mode: ${okV2 ? "v2" : okV1 ? "v1" : "invalid"}`);
+  console.log(okV2 || okV2Legacy || okV1 ? "Signature OK" : "Signature INVALID");
+  console.log(`Mode: ${okV2 ? "v2" : okV2Legacy ? "v2-legacy" : okV1 ? "v1" : "invalid"}`);
 }
 
 (async function main() {
