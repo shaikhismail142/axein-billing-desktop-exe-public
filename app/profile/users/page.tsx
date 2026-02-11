@@ -161,6 +161,25 @@ export default function ProfileUsersPage() {
     }
   }
 
+  async function rejectPendingUser(userId: number) {
+    setSaving(true);
+    setError(null);
+    setOk(null);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/reject`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Rejection failed");
+      setOk("User request rejected");
+      await refreshAll();
+    } catch (e: any) {
+      setError(String(e?.message || "Rejection failed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function createUserByAdmin() {
     setSaving(true);
     setError(null);
@@ -263,7 +282,7 @@ export default function ProfileUsersPage() {
                 <th>Phone</th>
                 <th>Requested</th>
                 <th style={{ width: 180 }}>Approve As</th>
-                <th style={{ width: 140 }}>Action</th>
+                <th style={{ width: 220 }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -294,9 +313,14 @@ export default function ProfileUsersPage() {
                       </select>
                     </td>
                     <td>
-                      <button className="btn" disabled={saving || seatsFull} onClick={() => approvePendingUser(user.id)}>
-                        Approve
-                      </button>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button className="btn" disabled={saving || seatsFull} onClick={() => approvePendingUser(user.id)}>
+                          Approve
+                        </button>
+                        <button className="btn" disabled={saving} onClick={() => rejectPendingUser(user.id)}>
+                          Reject
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

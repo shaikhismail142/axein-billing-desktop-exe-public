@@ -36,6 +36,7 @@
 24. Moved Settings UI under Profile route namespace (`/profile/settings`, `/profile/settings/invoice-fields`) and kept legacy `/settings*` routes as compatibility redirects.
 25. Added shared seat-limit resolution (`users + LAN clients`) and enforced it across signup, admin create/approve user flows, LAN pair/approve flows, and profile user-access UI seat visibility.
 26. Extended LAN status/profile network module with seat usage telemetry and active pairing-session visibility, and blocked pairing/approval actions in UI when seat capacity is exhausted.
+27. Added explicit pending-user rejection workflow (`/api/admin/users/[id]/reject`) with audit logging, and standardized pending/approve RBAC checks through shared request-access guards.
 
 ## Pending (Next phase)
 1. Run Tauri native build on Windows build machine and produce signed NSIS installer artifacts.

@@ -3,20 +3,13 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { isAdmin } from "@/app/lib/auth";
-import { getRequestBusinessId, getRequestUserId } from "@/app/lib/platform-context";
-import { getUserPermissionCodes } from "@/app/lib/platform-rbac";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 export async function GET(req: NextRequest) {
-  const businessId = getRequestBusinessId(req, 1);
-  const requesterUserId = getRequestUserId(req, 1);
-  const bypass = await isAdmin(req);
-  if (!bypass) {
-    const permissions = await getUserPermissionCodes(requesterUserId, businessId).catch(() => []);
-    if (!permissions.includes("perm.users.approve")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
+  const access = await requireAnyPermission(req, ["perm.users.approve", "perm.users.manage"], "Forbidden");
+  if ("response" in access) return access.response;
+
+  const businessId = access.ctx.businessId;
 
   try {
     const rs = await pool.query(

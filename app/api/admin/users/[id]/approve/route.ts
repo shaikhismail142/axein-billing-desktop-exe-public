@@ -3,10 +3,9 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { isAdmin } from "@/app/lib/auth";
 import { getRequestBusinessId, getRequestUserId } from "@/app/lib/platform-context";
-import { getUserPermissionCodes } from "@/app/lib/platform-rbac";
 import { resolveSeatUsage } from "@/app/lib/seat-limits";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 type ApproveBody = {
   role_codes?: string[];
@@ -26,15 +25,11 @@ export async function POST(
     ? body.role_codes.map((x) => String(x).trim().toLowerCase()).filter(Boolean)
     : [];
 
-  const businessId = getRequestBusinessId(req, 1);
-  const approverUserId = getRequestUserId(req, 1);
-  const bypass = await isAdmin(req);
-  if (!bypass) {
-    const permissions = await getUserPermissionCodes(approverUserId, businessId).catch(() => []);
-    if (!permissions.includes("perm.users.approve")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
+  const access = await requireAnyPermission(req, ["perm.users.approve", "perm.users.manage"], "Forbidden");
+  if ("response" in access) return access.response;
+
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
+  const approverUserId = access.ctx.userId > 0 ? access.ctx.userId : getRequestUserId(req, 1);
 
   const client = await pool.connect();
   try {
