@@ -47,6 +47,7 @@
 35. Hardened desktop migration connection fallback so local shells with `PG*`/`DATABASE_URL` set to missing roles (for example `app`) can still migrate through safe local fallback candidates.
 36. Hardened RBAC permissions across remaining core business APIs (products, invoices, purchases, sales, quotations, low-stock) while keeping public/system endpoints intentionally open (health, onboarding/signup, template lookup, profile access snapshot, LAN sync auth routes).
 37. Removed remaining legacy Docker-era repository artifacts and old install handbook files that were not used by the desktop EXE runtime path.
+38. Hardened desktop runtime DB connectivity with lazy candidate fallback selection (DATABASE_URL/PG settings first, then safe local fallback candidates in desktop mode) to avoid startup failures from local role mismatches.
 
 ## Pending (Next phase)
 1. Run Tauri native build on Windows build machine and produce signed NSIS installer artifacts.

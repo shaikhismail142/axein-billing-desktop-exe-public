@@ -70,6 +70,7 @@ Desktop runtime expects DB connectivity via:
 - or `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
 
 For desktop mode, app defaults `PGHOST` to `127.0.0.1` when `AXEIN_DESKTOP=1`.
+If local credentials are missing/mismatched, desktop runtime now auto-tries safe local fallback candidates (OS-user socket/localhost profiles) before failing.
 
 ## Important
 - Customer runtime does not require Docker.
