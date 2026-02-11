@@ -19,6 +19,7 @@
 11. Added RBAC administration module for admin-created users, user listing, and editable role-permission mappings.
 12. Added downloadable support bundle endpoint for diagnostics (app logs + audit logs + LAN/activation snapshot).
 13. Hardened business data isolation for customer/product/quotation APIs, including quotation conversion/export/PDF/bulk-delete flows with business-aware safeguards.
+14. Hardened invoice and sales APIs with business-aware filters/inserts for list/export/PDF/bulk actions, invoice updates, sales create/update, and related stock/payment writes.
 
 ## Pending (Next phase)
 1. Install/verify Rust toolchain and run actual Tauri builds on Windows.

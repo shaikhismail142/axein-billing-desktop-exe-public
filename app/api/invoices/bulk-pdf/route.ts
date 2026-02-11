@@ -3,10 +3,28 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/lib/platform-context";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import JSZip from "jszip";
 
+async function getBusinessScopedTables(tables: string[]) {
+  try {
+    const rs = await pool.query(
+      `SELECT table_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND column_name = 'business_id'
+          AND table_name = ANY($1::text[])`,
+      [tables]
+    );
+    return new Set((rs.rows || []).map((r: any) => String(r.table_name || "").toLowerCase()));
+  } catch {
+    return new Set<string>();
+  }
+}
+
 export async function POST(req: Request) {
+  const businessId = getRequestBusinessId(req, 1);
   let body: { ids: number[] };
   try {
     body = await req.json();
@@ -21,9 +39,20 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({ error: "No ids" }), { status: 400 });
   }
 
+  const scopedTables = await getBusinessScopedTables(["sales", "customers", "sale_items"]);
+  const hasSalesBusiness = scopedTables.has("sales");
+  const hasCustomerBusiness = scopedTables.has("customers");
+  const hasSaleItemsBusiness = scopedTables.has("sale_items");
+
   const zip = new JSZip();
 
   for (const id of ids) {
+    const saleParams: unknown[] = [id];
+    const saleBusinessFilter = hasSalesBusiness ? ` AND s.business_id = $${saleParams.push(businessId)}` : "";
+    const customerBusinessJoin = hasCustomerBusiness
+      ? ` AND c.business_id = ${hasSalesBusiness ? "s.business_id" : `$${saleParams.push(businessId)}`}`
+      : "";
+    const customerFallbackFilter = !hasSalesBusiness && hasCustomerBusiness ? " AND c.id IS NOT NULL" : "";
     const saleRs = await pool.query(
       `
       SELECT s.*,
@@ -35,14 +64,18 @@ export async function POST(req: Request) {
              (s.meta->>'doctor_name')  AS doctor_name,
              (s.meta->>'dc_no')        AS dc_no
       FROM sales s
-      LEFT JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN customers c ON c.id = s.customer_id${customerBusinessJoin}
       WHERE s.id = $1
+      ${saleBusinessFilter}
+      ${customerFallbackFilter}
     `,
-      [id]
+      saleParams
     );
     if (!saleRs.rowCount) continue;
 
     const sale = saleRs.rows[0] as any;
+    const itemParams: unknown[] = [id];
+    const itemBusinessFilter = hasSaleItemsBusiness ? ` AND si.business_id = $${itemParams.push(businessId)}` : "";
     const items = (
       await pool.query(
         `SELECT si.*, 
@@ -55,8 +88,9 @@ export async function POST(req: Request) {
              ON p.id = si.product_id
              OR (si.product_id IS NULL AND LOWER(p.name) = LOWER(si.name))
           WHERE si.sale_id = $1
+          ${itemBusinessFilter}
           ORDER BY si.id`,
-        [id]
+        itemParams
       )
     ).rows as any[];
 

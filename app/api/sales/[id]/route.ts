@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/lib/platform-context";
 
 type ReqItem = {
   product_id?: number;
@@ -46,6 +47,7 @@ type ProductCols = { hasMeta: boolean; hasStockQty: boolean; hasStock: boolean }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const saleId = Number(params.id);
+  const businessId = getRequestBusinessId(req, 1);
   if (!Number.isFinite(saleId)) return NextResponse.json({ error: "Invalid sale id" }, { status: 400 });
 
   let body: ReqBody;
@@ -61,6 +63,14 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const salesCols = await getColumns(client, "sales");
     const saleItemCols = await getColumns(client, "sale_items");
     const productCols = await getColumns(client, "products");
+    const customerCols = await getColumns(client, "customers");
+    let salePaymentCols = new Set<string>();
+    try { salePaymentCols = await getColumns(client, "sale_payments"); } catch {}
+    const hasSalesBusiness = salesCols.has("business_id");
+    const hasSaleItemsBusiness = saleItemCols.has("business_id");
+    const hasProductsBusiness = productCols.has("business_id");
+    const hasCustomersBusiness = customerCols.has("business_id");
+    const hasSalePaymentsBusiness = salePaymentCols.has("business_id");
     const prodCols: ProductCols = {
       hasMeta: productCols.has("meta"),
       hasStockQty: productCols.has("stock_qty"),
@@ -75,8 +85,10 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     if (salesCols.has("payment_method")) curSelectCols.push("payment_method");
     if (salesCols.has("payment_status")) curSelectCols.push("payment_status");
     const curSale = await client.query(
-      `SELECT ${curSelectCols.join(", ")} FROM sales WHERE id=$1 FOR UPDATE`,
-      [saleId]
+      `SELECT ${curSelectCols.join(", ")} FROM sales WHERE id=$1${
+        hasSalesBusiness ? " AND business_id = $2" : ""
+      } FOR UPDATE`,
+      hasSalesBusiness ? [saleId, businessId] : [saleId]
     );
     if (!curSale.rowCount) {
       await client.query("ROLLBACK");
@@ -87,17 +99,30 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const prevIsReturn = salesHasMeta ? !!curMeta.is_return : false;
 
     const prevItems = await client.query(
-      `SELECT name, qty FROM sale_items WHERE sale_id=$1`,
-      [saleId]
+      `SELECT name, qty FROM sale_items WHERE sale_id=$1${
+        hasSaleItemsBusiness ? " AND business_id = $2" : ""
+      }`,
+      hasSaleItemsBusiness ? [saleId, businessId] : [saleId]
     );
 
     // Undo previous stock effects
     for (const row of prevItems.rows) {
-      await adjustStockForItem(client, { name: row.name }, Number(row.qty), prevIsReturn ? -1 : +1, prodCols);
+      await adjustStockForItem(
+        client,
+        { name: row.name },
+        Number(row.qty),
+        prevIsReturn ? -1 : +1,
+        prodCols,
+        businessId,
+        hasProductsBusiness
+      );
     }
 
     // Replace items
-    await client.query(`DELETE FROM sale_items WHERE sale_id=$1`, [saleId]);
+    await client.query(
+      `DELETE FROM sale_items WHERE sale_id=$1${hasSaleItemsBusiness ? " AND business_id = $2" : ""}`,
+      hasSaleItemsBusiness ? [saleId, businessId] : [saleId]
+    );
 
     let subtotal = 0, tax_total = 0, total = 0;
     for (const it of items) {
@@ -126,6 +151,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       const addItem = (col: string, val: any) => {
         if (saleItemCols.has(col)) { itemCols.push(col); itemVals.push(val); }
       };
+      if (hasSaleItemsBusiness) addItem("business_id", businessId);
       addItem("sale_id", saleId);
       addItem("product_id", it.product_id ?? null);
       addItem("name", it.name.trim());
@@ -151,7 +177,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
       // Apply new stock effects
       const nextIsReturn = !!body.is_return;
-      await adjustStockForItem(client, { product_id: it.product_id, name: it.name }, qty, nextIsReturn ? +1 : -1, prodCols);
+      await adjustStockForItem(
+        client,
+        { product_id: it.product_id, name: it.name },
+        qty,
+        nextIsReturn ? +1 : -1,
+        prodCols,
+        businessId,
+        hasProductsBusiness
+      );
     }
 
     // Totals + meta
@@ -173,7 +207,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         : existingMethod;
 
     const updateCols: string[] = ["customer_id=$2"];
-    const updateVals: any[] = [saleId, await resolveCustomerId(client, body)];
+    const updateVals: any[] = [saleId, await resolveCustomerId(client, body, businessId, hasCustomersBusiness)];
     let idx = 3;
 
     const addCol = (col: string, val: any) => {
@@ -195,10 +229,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     addCol("pending_amount", pendingAmount);
     addCol("payment_status", paymentStatus);
     addCol("payment_method", paymentMethod || null);
-    await client.query(
-      `UPDATE sales SET ${updateCols.join(", ")} WHERE id=$1`,
-      updateVals
-    );
+    const updateWhere = hasSalesBusiness ? `id=$1 AND business_id = $${idx}` : "id=$1";
+    if (hasSalesBusiness) updateVals.push(businessId);
+    await client.query(`UPDATE sales SET ${updateCols.join(", ")} WHERE ${updateWhere}`, updateVals);
 
     const newMeta = {
       ...(curMeta || {}),
@@ -217,8 +250,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
     if (salesHasMeta) {
       await client.query(
-        `UPDATE sales SET meta=$2::jsonb WHERE id=$1`,
-        [saleId, JSON.stringify(newMeta)]
+        `UPDATE sales SET meta=$2::jsonb WHERE id=$1${hasSalesBusiness ? " AND business_id = $3" : ""}`,
+        hasSalesBusiness ? [saleId, JSON.stringify(newMeta), businessId] : [saleId, JSON.stringify(newMeta)]
       );
     }
 
@@ -230,13 +263,24 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         `SELECT to_regclass('public.sale_payments') IS NOT NULL AS ok`
       );
       if (hasPayments.rows?.[0]?.ok) {
-        await client.query(`DELETE FROM sale_payments WHERE sale_id=$1`, [saleId]);
+        await client.query(
+          `DELETE FROM sale_payments WHERE sale_id=$1${hasSalePaymentsBusiness ? " AND business_id = $2" : ""}`,
+          hasSalePaymentsBusiness ? [saleId, businessId] : [saleId]
+        );
         if (paid > 0) {
-          await client.query(
-            `INSERT INTO sale_payments (sale_id, method, amount, ref)
-             VALUES ($1, $2, $3, NULL)`,
-            [saleId, paymentMethod || "cash", paid]
-          );
+          if (hasSalePaymentsBusiness) {
+            await client.query(
+              `INSERT INTO sale_payments (business_id, sale_id, method, amount, ref)
+               VALUES ($1, $2, $3, $4, NULL)`,
+              [businessId, saleId, paymentMethod || "cash", paid]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO sale_payments (sale_id, method, amount, ref)
+               VALUES ($1, $2, $3, NULL)`,
+              [saleId, paymentMethod || "cash", paid]
+            );
+          }
         }
       }
     } catch (e: any) {
@@ -252,16 +296,36 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 /** ------- helpers (same as POST) ------- */
-async function resolveCustomerId(client: any, body: { customer_id?: number|null; customer?: any; customer_name?: string|null; }) {
-  if (body.customer_id) return body.customer_id;
+async function resolveCustomerId(
+  client: any,
+  body: { customer_id?: number|null; customer?: any; customer_name?: string|null; },
+  businessId: number,
+  scopeByBusiness: boolean
+) {
+  if (body.customer_id) {
+    if (!scopeByBusiness) return body.customer_id;
+    const scoped = await client.query(
+      `SELECT id FROM customers WHERE id = $1 AND business_id = $2 LIMIT 1`,
+      [body.customer_id, businessId]
+    );
+    if (scoped.rowCount) return body.customer_id;
+    throw new Error("Customer does not belong to this business");
+  }
   const name = (body.customer?.name || body.customer_name || "").trim();
   if (!name) return null;
-  const found = await client.query(`SELECT id FROM customers WHERE LOWER(name)=LOWER($1) LIMIT 1`, [name]);
+  const found = scopeByBusiness
+    ? await client.query(`SELECT id FROM customers WHERE business_id = $1 AND LOWER(name)=LOWER($2) LIMIT 1`, [businessId, name])
+    : await client.query(`SELECT id FROM customers WHERE LOWER(name)=LOWER($1) LIMIT 1`, [name]);
   if (found.rowCount) return found.rows[0].id as number;
-  const ins = await client.query(
-    `INSERT INTO customers (name, phone, gstin, address) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [name, body.customer?.phone ?? null, body.customer?.gstin ?? null, body.customer?.address ?? null]
-  );
+  const ins = scopeByBusiness
+    ? await client.query(
+        `INSERT INTO customers (business_id, name, phone, gstin, address) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [businessId, name, body.customer?.phone ?? null, body.customer?.gstin ?? null, body.customer?.address ?? null]
+      )
+    : await client.query(
+        `INSERT INTO customers (name, phone, gstin, address) VALUES ($1,$2,$3,$4) RETURNING id`,
+        [name, body.customer?.phone ?? null, body.customer?.gstin ?? null, body.customer?.address ?? null]
+      );
   return ins.rows[0].id as number;
 }
 
@@ -270,7 +334,9 @@ async function adjustStockForItem(
   product: { product_id?: number; name: string },
   qty: number,
   direction: 1|-1,
-  cols: ProductCols
+  cols: ProductCols,
+  businessId: number,
+  scopeByBusiness: boolean
 ) {
   try {
     let prod = null;
@@ -279,7 +345,12 @@ async function adjustStockForItem(
       if (cols.hasMeta) selectCols.push("meta");
       if (cols.hasStockQty) selectCols.push("stock_qty");
       if (cols.hasStock) selectCols.push("stock");
-      const r = await client.query(`SELECT ${selectCols.join(", ")} FROM products WHERE id=$1`, [product.product_id]);
+      const r = await client.query(
+        `SELECT ${selectCols.join(", ")} FROM products WHERE id=$1${
+          scopeByBusiness ? " AND business_id = $2" : ""
+        }`,
+        scopeByBusiness ? [product.product_id, businessId] : [product.product_id]
+      );
       if (r.rowCount) prod = r.rows[0];
     }
     if (!prod) {
@@ -287,15 +358,30 @@ async function adjustStockForItem(
       if (cols.hasMeta) selectCols.push("meta");
       if (cols.hasStockQty) selectCols.push("stock_qty");
       if (cols.hasStock) selectCols.push("stock");
-      const r = await client.query(`SELECT ${selectCols.join(", ")} FROM products WHERE LOWER(name)=LOWER($1) LIMIT 1`, [product.name.trim()]);
+      const r = await client.query(
+        `SELECT ${selectCols.join(", ")} FROM products WHERE LOWER(name)=LOWER($1)${
+          scopeByBusiness ? " AND business_id = $2" : ""
+        } LIMIT 1`,
+        scopeByBusiness ? [product.name.trim(), businessId] : [product.name.trim()]
+      );
       if (r.rowCount) prod = r.rows[0];
     }
     if (!prod) {
       if (cols.hasMeta) {
-        const ins = await client.query(`INSERT INTO products (name, meta) VALUES ($1,'{}'::jsonb) RETURNING id, meta`, [product.name.trim()]);
+        const ins = scopeByBusiness
+          ? await client.query(
+              `INSERT INTO products (business_id, name, meta) VALUES ($1,$2,'{}'::jsonb) RETURNING id, meta`,
+              [businessId, product.name.trim()]
+            )
+          : await client.query(
+              `INSERT INTO products (name, meta) VALUES ($1,'{}'::jsonb) RETURNING id, meta`,
+              [product.name.trim()]
+            );
         prod = ins.rows[0];
       } else {
-        const ins = await client.query(`INSERT INTO products (name) VALUES ($1) RETURNING id`, [product.name.trim()]);
+        const ins = scopeByBusiness
+          ? await client.query(`INSERT INTO products (business_id, name) VALUES ($1,$2) RETURNING id`, [businessId, product.name.trim()])
+          : await client.query(`INSERT INTO products (name) VALUES ($1) RETURNING id`, [product.name.trim()]);
         prod = ins.rows[0];
       }
     }
@@ -309,11 +395,20 @@ async function adjustStockForItem(
     const next = current + (direction * qty);
     if (cols.hasMeta) {
       const newMeta = { ...(prod.meta || {}), stock_qty: round2(next) };
-      await client.query(`UPDATE products SET meta=$2::jsonb WHERE id=$1`, [prod.id, JSON.stringify(newMeta)]);
+      await client.query(
+        `UPDATE products SET meta=$2::jsonb WHERE id=$1${scopeByBusiness ? " AND business_id = $3" : ""}`,
+        scopeByBusiness ? [prod.id, JSON.stringify(newMeta), businessId] : [prod.id, JSON.stringify(newMeta)]
+      );
     } else if (cols.hasStockQty) {
-      await client.query(`UPDATE products SET stock_qty=$2 WHERE id=$1`, [prod.id, round2(next)]);
+      await client.query(
+        `UPDATE products SET stock_qty=$2 WHERE id=$1${scopeByBusiness ? " AND business_id = $3" : ""}`,
+        scopeByBusiness ? [prod.id, round2(next), businessId] : [prod.id, round2(next)]
+      );
     } else if (cols.hasStock) {
-      await client.query(`UPDATE products SET stock=$2 WHERE id=$1`, [prod.id, round2(next)]);
+      await client.query(
+        `UPDATE products SET stock=$2 WHERE id=$1${scopeByBusiness ? " AND business_id = $3" : ""}`,
+        scopeByBusiness ? [prod.id, round2(next), businessId] : [prod.id, round2(next)]
+      );
     }
   } catch { /* swallow if no products table */ }
 }

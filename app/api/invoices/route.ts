@@ -1,6 +1,7 @@
 // app/api/invoices/route.ts
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/lib/platform-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ function sortColumn(key: "date" | "invoice" | "customer" | "total") {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const businessId = getRequestBusinessId(req, 1);
   const sp = Object.fromEntries(url.searchParams.entries()) as PageParams;
 
   const page    = Math.max(1, Number(sp.page ?? 1));
@@ -52,9 +54,22 @@ export async function GET(req: Request) {
   const to      = (sp.to ?? "").trim();
   const custId  = (sp.customerId ?? "").trim();
 
+  const salesCols = await getColumns("sales");
+  const customerCols = await getColumns("customers");
+  const hasSalesBusiness = salesCols.has("business_id");
+  const hasCustomerBusiness = customerCols.has("business_id");
+
   const where: string[] = [];
-  const params: any[] = [];
-  let p = 1;
+  const params: any[] = hasSalesBusiness || hasCustomerBusiness ? [businessId] : [];
+  const businessRef = params.length ? `$1` : null;
+  let p = params.length + 1;
+
+  if (hasSalesBusiness && businessRef) {
+    where.push(`s.business_id = ${businessRef}`);
+  }
+  if (!hasSalesBusiness && hasCustomerBusiness) {
+    where.push(`c.id IS NOT NULL`);
+  }
 
   if (q) {
     where.push(`(s.invoice_no ILIKE $${p} OR c.name ILIKE $${p})`);
@@ -78,10 +93,12 @@ export async function GET(req: Request) {
   }
 
   const whereSQL = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const customerJoin = `LEFT JOIN customers c ON c.id = s.customer_id${
+    hasCustomerBusiness && businessRef ? ` AND c.business_id = ${businessRef}` : ""
+  }`;
   const orderSQL = `ORDER BY ${sortColumn(sort!)} ${dir === "asc" ? "ASC" : "DESC"}, s.id ASC`;
   const offset   = (page - 1) * perPage;
 
-  const salesCols = await getColumns("sales");
   const hasMeta = salesCols.has("meta");
   const totalExpr = salesCols.has("total")
     ? "s.total"
@@ -107,7 +124,7 @@ export async function GET(req: Request) {
     `
     SELECT COUNT(*)::int AS count
     FROM sales s
-    LEFT JOIN customers c ON c.id = s.customer_id
+    ${customerJoin}
     ${whereSQL}
     `,
     params
@@ -126,7 +143,7 @@ export async function GET(req: Request) {
       ${statusExpr} AS payment_status,
       c.name AS customer_name
     FROM sales s
-    LEFT JOIN customers c ON c.id = s.customer_id
+    ${customerJoin}
     ${whereSQL}
     ${orderSQL}
     LIMIT $${p} OFFSET $${p + 1}

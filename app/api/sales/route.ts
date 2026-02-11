@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/lib/platform-context";
 
 /** -------- Types for request payload ---------- */
 type NewSaleItem = {
@@ -120,20 +121,35 @@ async function getColumns(client: any, table: string): Promise<Set<string>> {
 
 type ProductCols = { hasMeta: boolean; hasStockQty: boolean; hasStock: boolean };
 
-async function getNextInvoiceNo(client: any, salesCols: Set<string>): Promise<string> {
+async function getNextInvoiceNo(
+  client: any,
+  salesCols: Set<string>,
+  businessId: number,
+  scopeByBusiness: boolean
+): Promise<string> {
   const prefix = `${currentFYLabel()}/`;
   if (!salesCols.has("invoice_no")) {
     const { ymd, hm } = fmtISTParts();
     return `INV/${ymd}/${hm}-${Math.floor(Math.random() * 900 + 100)}`;
   }
-  const rs = await client.query(
-    `SELECT invoice_no
-       FROM sales
-      WHERE invoice_no LIKE $1
-      ORDER BY id DESC
-      LIMIT 1`,
-    [prefix + "%"]
-  );
+  const rs = scopeByBusiness
+    ? await client.query(
+        `SELECT invoice_no
+           FROM sales
+          WHERE invoice_no LIKE $1
+            AND business_id = $2
+          ORDER BY id DESC
+          LIMIT 1`,
+        [prefix + "%", businessId]
+      )
+    : await client.query(
+        `SELECT invoice_no
+           FROM sales
+          WHERE invoice_no LIKE $1
+          ORDER BY id DESC
+          LIMIT 1`,
+        [prefix + "%"]
+      );
   let seq = 1;
   if (rs.rowCount > 0) {
     const last = String(rs.rows[0].invoice_no || "");
@@ -147,7 +163,9 @@ async function getNextDcNo(
   client: any,
   companyName: string,
   baseDate: Date | undefined,
-  salesCols: Set<string>
+  salesCols: Set<string>,
+  businessId: number,
+  scopeByBusiness: boolean
 ): Promise<string> {
   const safeCompany = (companyName || "Company")
     .trim()
@@ -158,14 +176,24 @@ async function getNextDcNo(
   const prefix = `DC/${safeCompany}/${ymd}/`;
   try {
     if (salesCols.has("dc_no")) {
-      const rs = await client.query(
-        `SELECT dc_no
-           FROM sales
-          WHERE dc_no LIKE $1
-          ORDER BY id DESC
-          LIMIT 1`,
-        [prefix + "%"]
-      );
+      const rs = scopeByBusiness
+        ? await client.query(
+            `SELECT dc_no
+               FROM sales
+              WHERE dc_no LIKE $1
+                AND business_id = $2
+              ORDER BY id DESC
+              LIMIT 1`,
+            [prefix + "%", businessId]
+          )
+        : await client.query(
+            `SELECT dc_no
+               FROM sales
+              WHERE dc_no LIKE $1
+              ORDER BY id DESC
+              LIMIT 1`,
+            [prefix + "%"]
+          );
       let seq = 1;
       if (rs.rowCount > 0) {
         const last = String(rs.rows[0]?.dc_no || "");
@@ -175,14 +203,24 @@ async function getNextDcNo(
       return `${prefix}${hm}-${String(seq).padStart(3, "0")}`;
     }
     if (salesCols.has("meta")) {
-      const rs = await client.query(
-        `SELECT meta->>'dc_no' AS dc_no
-           FROM sales
-          WHERE (meta->>'dc_no') LIKE $1
-          ORDER BY id DESC
-          LIMIT 1`,
-        [prefix + "%"]
-      );
+      const rs = scopeByBusiness
+        ? await client.query(
+            `SELECT meta->>'dc_no' AS dc_no
+               FROM sales
+              WHERE (meta->>'dc_no') LIKE $1
+                AND business_id = $2
+              ORDER BY id DESC
+              LIMIT 1`,
+            [prefix + "%", businessId]
+          )
+        : await client.query(
+            `SELECT meta->>'dc_no' AS dc_no
+               FROM sales
+              WHERE (meta->>'dc_no') LIKE $1
+              ORDER BY id DESC
+              LIMIT 1`,
+            [prefix + "%"]
+          );
       let seq = 1;
       if (rs.rowCount > 0) {
         const last = String(rs.rows[0]?.dc_no || "");
@@ -197,48 +235,90 @@ async function getNextDcNo(
   return `${prefix}${hm}-${String(1).padStart(3, "0")}`;
 }
 
-async function resolveCustomerId(client: any, payload: NewSaleBody): Promise<number | null> {
+async function resolveCustomerId(
+  client: any,
+  payload: NewSaleBody,
+  businessId: number,
+  scopeByBusiness: boolean
+): Promise<number | null> {
   if (payload.customer_id != null && payload.customer_id !== "") {
     const id = Number(payload.customer_id);
-    if (Number.isFinite(id)) return id;
+    if (Number.isFinite(id)) {
+      if (!scopeByBusiness) return id;
+      const scoped = await client.query(
+        `SELECT id FROM customers WHERE id = $1 AND business_id = $2 LIMIT 1`,
+        [id, businessId]
+      );
+      if (scoped.rowCount > 0) return id;
+      throw new Error("Customer does not belong to this business");
+    }
   }
 
   const name = nstr(payload.customer_name);
   if (!name) return null;
 
-  const found = await client.query(
-    `SELECT id FROM customers WHERE lower(name) = lower($1) LIMIT 1`,
-    [name]
-  );
+  const found = scopeByBusiness
+    ? await client.query(
+        `SELECT id FROM customers WHERE business_id = $1 AND lower(name) = lower($2) LIMIT 1`,
+        [businessId, name]
+      )
+    : await client.query(`SELECT id FROM customers WHERE lower(name) = lower($1) LIMIT 1`, [name]);
   if (found.rowCount > 0) return Number(found.rows[0].id);
 
-  const ins = await client.query(
-    `INSERT INTO customers (name, phone, gstin, address)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [
-      name,
-      nstr(payload.customer_phone),
-      nstr(payload.customer_gstin),
-      nstr(payload.customer_address),
-    ]
-  );
+  const ins = scopeByBusiness
+    ? await client.query(
+        `INSERT INTO customers (business_id, name, phone, gstin, address)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [
+          businessId,
+          name,
+          nstr(payload.customer_phone),
+          nstr(payload.customer_gstin),
+          nstr(payload.customer_address),
+        ]
+      )
+    : await client.query(
+        `INSERT INTO customers (name, phone, gstin, address)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [
+          name,
+          nstr(payload.customer_phone),
+          nstr(payload.customer_gstin),
+          nstr(payload.customer_address),
+        ]
+      );
   return Number(ins.rows[0].id);
 }
 
 /** ----- Stock helpers ----- **/
 
-async function lockAndReadProductById(client: any, id: number, cols: ProductCols) {
+async function lockAndReadProductById(
+  client: any,
+  id: number,
+  cols: ProductCols,
+  businessId: number,
+  scopeByBusiness: boolean
+) {
   const selectCols = ["id"];
   if (cols.hasMeta) selectCols.push("meta");
   if (cols.hasStockQty) selectCols.push("stock_qty");
   if (cols.hasStock) selectCols.push("stock");
-  const rs = await client.query(
-    `SELECT ${selectCols.join(", ")}
-       FROM products
-      WHERE id = $1
-      FOR UPDATE`,
-    [id]
-  );
+  const rs = scopeByBusiness
+    ? await client.query(
+        `SELECT ${selectCols.join(", ")}
+           FROM products
+          WHERE id = $1
+            AND business_id = $2
+          FOR UPDATE`,
+        [id, businessId]
+      )
+    : await client.query(
+        `SELECT ${selectCols.join(", ")}
+           FROM products
+          WHERE id = $1
+          FOR UPDATE`,
+        [id]
+      );
   if (rs.rowCount === 0) return null;
   const row = rs.rows[0] as any;
   const meta = cols.hasMeta ? (row.meta || {}) : {};
@@ -252,19 +332,35 @@ async function lockAndReadProductById(client: any, id: number, cols: ProductCols
   return { id: row.id, meta, current };
 }
 
-async function lockAndReadProductByName(client: any, productName: string, cols: ProductCols) {
+async function lockAndReadProductByName(
+  client: any,
+  productName: string,
+  cols: ProductCols,
+  businessId: number,
+  scopeByBusiness: boolean
+) {
   const selectCols = ["id"];
   if (cols.hasMeta) selectCols.push("meta");
   if (cols.hasStockQty) selectCols.push("stock_qty");
   if (cols.hasStock) selectCols.push("stock");
-  const rs = await client.query(
-    `SELECT ${selectCols.join(", ")}
-       FROM products
-      WHERE lower(name) = lower($1)
-      FOR UPDATE
-      LIMIT 1`,
-    [productName]
-  );
+  const rs = scopeByBusiness
+    ? await client.query(
+        `SELECT ${selectCols.join(", ")}
+           FROM products
+          WHERE lower(name) = lower($1)
+            AND business_id = $2
+          FOR UPDATE
+          LIMIT 1`,
+        [productName, businessId]
+      )
+    : await client.query(
+        `SELECT ${selectCols.join(", ")}
+           FROM products
+          WHERE lower(name) = lower($1)
+          FOR UPDATE
+          LIMIT 1`,
+        [productName]
+      );
   if (rs.rowCount === 0) return null;
   const row = rs.rows[0] as any;
   const meta = cols.hasMeta ? (row.meta || {}) : {};
@@ -283,15 +379,17 @@ async function applyStockDelta(
   productRef: { id?: number | null; name?: string | null },
   delta: number,
   allowNegative = false,
-  cols: ProductCols
+  cols: ProductCols,
+  businessId: number,
+  scopeByBusiness: boolean
 ) {
   if (!cols.hasMeta && !cols.hasStockQty && !cols.hasStock) return;
   const byId = Number(productRef.id);
   const locked =
     Number.isFinite(byId) && byId > 0
-      ? await lockAndReadProductById(client, byId, cols)
+      ? await lockAndReadProductById(client, byId, cols, businessId, scopeByBusiness)
       : productRef.name
-      ? await lockAndReadProductByName(client, String(productRef.name), cols)
+      ? await lockAndReadProductByName(client, String(productRef.name), cols, businessId, scopeByBusiness)
       : null;
 
   if (!locked) return;
@@ -302,24 +400,41 @@ async function applyStockDelta(
 
   if (cols.hasMeta) {
     const nextMeta = { ...meta, stock_qty: next };
-    await client.query(`UPDATE products SET meta = $2::jsonb WHERE id = $1`, [
-      id,
-      JSON.stringify(nextMeta),
-    ]);
+    if (scopeByBusiness) {
+      await client.query(`UPDATE products SET meta = $2::jsonb WHERE id = $1 AND business_id = $3`, [
+        id,
+        JSON.stringify(nextMeta),
+        businessId,
+      ]);
+    } else {
+      await client.query(`UPDATE products SET meta = $2::jsonb WHERE id = $1`, [
+        id,
+        JSON.stringify(nextMeta),
+      ]);
+    }
     return;
   }
   if (cols.hasStockQty) {
-    await client.query(`UPDATE products SET stock_qty = $2 WHERE id = $1`, [id, next]);
+    if (scopeByBusiness) {
+      await client.query(`UPDATE products SET stock_qty = $2 WHERE id = $1 AND business_id = $3`, [id, next, businessId]);
+    } else {
+      await client.query(`UPDATE products SET stock_qty = $2 WHERE id = $1`, [id, next]);
+    }
     return;
   }
   if (cols.hasStock) {
-    await client.query(`UPDATE products SET stock = $2 WHERE id = $1`, [id, next]);
+    if (scopeByBusiness) {
+      await client.query(`UPDATE products SET stock = $2 WHERE id = $1 AND business_id = $3`, [id, next, businessId]);
+    } else {
+      await client.query(`UPDATE products SET stock = $2 WHERE id = $1`, [id, next]);
+    }
   }
 }
 
 /** -------- Main handler ---------- */
 
 export async function POST(req: Request) {
+  const businessId = getRequestBusinessId(req, 1);
   let payload: NewSaleBody;
   try {
     payload = (await req.json()) as NewSaleBody;
@@ -438,6 +553,17 @@ export async function POST(req: Request) {
     const salesCols = await getColumns(client, "sales");
     const saleItemCols = await getColumns(client, "sale_items");
     const productCols = await getColumns(client, "products");
+    const customerCols = await getColumns(client, "customers");
+    let settingsCols = new Set<string>();
+    let salePaymentCols = new Set<string>();
+    try { settingsCols = await getColumns(client, "settings"); } catch {}
+    try { salePaymentCols = await getColumns(client, "sale_payments"); } catch {}
+    const hasSalesBusiness = salesCols.has("business_id");
+    const hasSaleItemsBusiness = saleItemCols.has("business_id");
+    const hasProductsBusiness = productCols.has("business_id");
+    const hasCustomersBusiness = customerCols.has("business_id");
+    const hasSettingsBusiness = settingsCols.has("business_id");
+    const hasSalePaymentsBusiness = salePaymentCols.has("business_id");
     const prodCols: ProductCols = {
       hasMeta: productCols.has("meta"),
       hasStockQty: productCols.has("stock_qty"),
@@ -447,15 +573,24 @@ export async function POST(req: Request) {
     if (salesCols.size === 0) throw new Error("Sales table not found or has no columns.");
     if (saleItemCols.size === 0) throw new Error("Sale items table not found or has no columns.");
 
-    const customer_id = await resolveCustomerId(client, payload);
+    const customer_id = await resolveCustomerId(client, payload, businessId, hasCustomersBusiness);
     const invoiceDateParam =
       payload.invoice_date && nstr(payload.invoice_date)
         ? new Date(String(payload.invoice_date))
         : new Date();
-    const invoice_no = await getNextInvoiceNo(client, salesCols);
-    const bizRes = await client.query(`SELECT value_json FROM settings WHERE key='business' LIMIT 1`);
+    const invoice_no = await getNextInvoiceNo(client, salesCols, businessId, hasSalesBusiness);
+    const bizRes = hasSettingsBusiness
+      ? await client.query(`SELECT value_json FROM settings WHERE key='business' AND business_id = $1 LIMIT 1`, [businessId])
+      : await client.query(`SELECT value_json FROM settings WHERE key='business' LIMIT 1`);
     const biz = (bizRes.rows?.[0]?.value_json ?? {}) as any;
-    const dc_no = await getNextDcNo(client, String(biz?.name || "Company"), invoiceDateParam, salesCols);
+    const dc_no = await getNextDcNo(
+      client,
+      String(biz?.name || "Company"),
+      invoiceDateParam,
+      salesCols,
+      businessId,
+      hasSalesBusiness
+    );
 
     // Insert sale (meta kept as JS object to match existing pattern)
     const saleMeta = {
@@ -480,6 +615,7 @@ export async function POST(req: Request) {
       if (salesCols.has(col)) { saleCols.push(col); saleVals.push(val); }
     };
 
+    addSale("business_id", businessId);
     addSale("invoice_no", invoice_no);
     addSale("customer_id", customer_id);
     addSale("invoice_date", invoiceDateParam.toISOString());
@@ -531,6 +667,7 @@ export async function POST(req: Request) {
         if (saleItemCols.has(col)) { itemCols.push(col); itemVals.push(val); }
       };
 
+      if (hasSaleItemsBusiness) addItem("business_id", businessId);
       addItem("sale_id", sale_id);
       addItem("product_id", ln.product_id);
       addItem("name", ln.name);
@@ -560,7 +697,9 @@ export async function POST(req: Request) {
         { id: ln.product_id, name: ln.product_id ? null : ln.name },
         delta,
         allowNegative,
-        prodCols
+        prodCols,
+        businessId,
+        hasProductsBusiness
       );
     }
 
@@ -573,11 +712,19 @@ export async function POST(req: Request) {
           `SELECT to_regclass('public.sale_payments') IS NOT NULL AS ok`
         );
         if (hasPayments.rows?.[0]?.ok) {
-          await client.query(
-            `INSERT INTO sale_payments (sale_id, method, amount, ref)
-             VALUES ($1, $2, $3, $4)`,
-            [paymentRow.sale_id, paymentRow.method, paymentRow.amount, paymentRow.ref]
-          );
+          if (hasSalePaymentsBusiness) {
+            await client.query(
+              `INSERT INTO sale_payments (business_id, sale_id, method, amount, ref)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [businessId, paymentRow.sale_id, paymentRow.method, paymentRow.amount, paymentRow.ref]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO sale_payments (sale_id, method, amount, ref)
+               VALUES ($1, $2, $3, $4)`,
+              [paymentRow.sale_id, paymentRow.method, paymentRow.amount, paymentRow.ref]
+            );
+          }
         }
       } catch (e: any) {
         console.warn("sale_payments insert skipped:", e?.message || e);

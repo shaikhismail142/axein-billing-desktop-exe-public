@@ -1,9 +1,26 @@
 // app/api/invoices/export/route.ts
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/lib/platform-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function getBusinessScopedTables(tables: string[]) {
+  try {
+    const rs = await pool.query(
+      `SELECT table_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND column_name = 'business_id'
+          AND table_name = ANY($1::text[])`,
+      [tables]
+    );
+    return new Set((rs.rows || []).map((r: any) => String(r.table_name || "").toLowerCase()));
+  } catch {
+    return new Set<string>();
+  }
+}
 
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -12,15 +29,28 @@ function csvEscape(value: unknown): string {
 }
 
 export async function GET(req: Request) {
-  const url   = new URL(req.url);
-  const q     = url.searchParams.get("q")?.trim();
-  const from  = url.searchParams.get("from")?.trim();
-  const to    = url.searchParams.get("to")?.trim();
-  const idsP  = url.searchParams.get("ids")?.trim();
+  const url = new URL(req.url);
+  const businessId = getRequestBusinessId(req, 1);
+  const q = url.searchParams.get("q")?.trim();
+  const from = url.searchParams.get("from")?.trim();
+  const to = url.searchParams.get("to")?.trim();
+  const idsP = url.searchParams.get("ids")?.trim();
+
+  const scopedTables = await getBusinessScopedTables(["sales", "customers"]);
+  const hasSalesBusiness = scopedTables.has("sales");
+  const hasCustomerBusiness = scopedTables.has("customers");
 
   const where: string[] = [];
-  const params: any[] = [];
-  let p = 1;
+  const params: any[] = hasSalesBusiness || hasCustomerBusiness ? [businessId] : [];
+  const businessRef = params.length ? `$1` : null;
+  let p = params.length + 1;
+
+  if (hasSalesBusiness && businessRef) {
+    where.push(`s.business_id = ${businessRef}`);
+  }
+  if (!hasSalesBusiness && hasCustomerBusiness) {
+    where.push(`c.id IS NOT NULL`);
+  }
 
   if (idsP) {
     const ids = idsP
@@ -52,6 +82,9 @@ export async function GET(req: Request) {
   }
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const customerJoin = `LEFT JOIN customers c ON c.id = s.customer_id${
+    hasCustomerBusiness && businessRef ? ` AND c.business_id = ${businessRef}` : ""
+  }`;
 
   const { rows } = await pool.query(
     `
@@ -71,7 +104,7 @@ export async function GET(req: Request) {
       (s.meta->>'notes') AS notes,
       (s.meta->'custom_fields') AS custom_fields
     FROM sales s
-    LEFT JOIN customers c ON c.id = s.customer_id
+    ${customerJoin}
     ${whereSql}
     ORDER BY COALESCE(s.invoice_date::timestamp, s.created_at) ASC, s.id ASC
     `,

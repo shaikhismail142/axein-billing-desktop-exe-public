@@ -1,4 +1,5 @@
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/lib/platform-context";
 import PDFDocument from "pdfkit";
 import fs from "node:fs";
 import path from "node:path";
@@ -148,13 +149,42 @@ const FS_TITLE = 15;
 const FS_BASE = 10;
 const FS_SMALL = 9;
 
+async function getBusinessScopedTables(tables: string[]) {
+  try {
+    const rs = await pool.query(
+      `SELECT table_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND column_name = 'business_id'
+          AND table_name = ANY($1::text[])`,
+      [tables]
+    );
+    return new Set((rs.rows || []).map((r: any) => String(r.table_name || "").toLowerCase()));
+  } catch {
+    return new Set<string>();
+  }
+}
+
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
+  const businessId = getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) {
     return new Response(JSON.stringify({ error: "Invalid id" }), { status: 400 });
   }
 
+  const scopedTables = await getBusinessScopedTables(["sales", "customers", "sale_items", "settings"]);
+  const hasSalesBusiness = scopedTables.has("sales");
+  const hasCustomerBusiness = scopedTables.has("customers");
+  const hasSaleItemsBusiness = scopedTables.has("sale_items");
+  const hasSettingsBusiness = scopedTables.has("settings");
+
   // ---- Sale & items ----
+  const saleParams: unknown[] = [id];
+  const saleBusinessFilter = hasSalesBusiness ? ` and s.business_id = $${saleParams.push(businessId)}` : "";
+  const customerBusinessJoin = hasCustomerBusiness
+    ? ` and c.business_id = ${hasSalesBusiness ? "s.business_id" : `$${saleParams.push(businessId)}`}`
+    : "";
+  const customerFallbackFilter = !hasSalesBusiness && hasCustomerBusiness ? " and c.id is not null" : "";
   const saleRs = await pool.query(
     `SELECT s.id, s.invoice_no, s.invoice_date, s.subtotal, s.tax_total, s.total,
             COALESCE(s.amount_paid, (s.meta->>'amount_paid')::numeric, 0) AS amount_paid,
@@ -172,13 +202,15 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             (s.meta->'custom_fields') AS custom_fields,
             c.name AS customer_name
        FROM sales s
-       LEFT JOIN customers c ON c.id = s.customer_id
-      WHERE s.id=$1`,
-    [id]
+       LEFT JOIN customers c ON c.id = s.customer_id${customerBusinessJoin}
+      WHERE s.id=$1${saleBusinessFilter}${customerFallbackFilter}`,
+    saleParams
   );
   if (saleRs.rowCount === 0) return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
   const sale = saleRs.rows[0] as Sale;
 
+  const itemParams: unknown[] = [id];
+  const itemBusinessFilter = hasSaleItemsBusiness ? ` and si.business_id = $${itemParams.push(businessId)}` : "";
   const items = (
     await pool.query(
       `SELECT si.name, si.qty, si.unit_price, si.discount_pct, si.gst_slab, si.taxable, si.tax, si.total,
@@ -190,18 +222,26 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
          LEFT JOIN products p
            ON p.id = si.product_id
            OR (si.product_id IS NULL AND LOWER(p.name) = LOWER(si.name))
-        WHERE si.sale_id=$1
+        WHERE si.sale_id=$1${itemBusinessFilter}
         ORDER BY si.id`,
-      [id]
+      itemParams
     )
   ).rows as Item[];
 
   // ---- Business settings ----
-  const bizRs = await pool.query(`SELECT value_json FROM settings WHERE key='business' LIMIT 1`);
+  const settingParams: unknown[] = hasSettingsBusiness ? [businessId] : [];
+  const settingBusinessFilter = hasSettingsBusiness ? " and business_id = $1" : "";
+  const bizRs = await pool.query(
+    `SELECT value_json FROM settings WHERE key='business'${settingBusinessFilter} LIMIT 1`,
+    settingParams
+  );
   const biz: Biz = (bizRs.rows?.[0]?.value_json ?? {}) as Biz;
 
   // ---- Invoice defaults (for notes/terms fallback) ----
-  const defRs = await pool.query(`SELECT value_json FROM settings WHERE key='invoice_defaults' LIMIT 1`);
+  const defRs = await pool.query(
+    `SELECT value_json FROM settings WHERE key='invoice_defaults'${settingBusinessFilter} LIMIT 1`,
+    settingParams
+  );
   const invDefaults = (defRs.rows?.[0]?.value_json ?? {}) as {
     notes_default?: string;
     terms_default?: string;
