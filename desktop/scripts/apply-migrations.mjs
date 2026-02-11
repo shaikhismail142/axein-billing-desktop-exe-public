@@ -28,14 +28,23 @@ function defaultEnvConfig() {
   };
 }
 
-function buildConnectionCandidates() {
-  if (process.env.DATABASE_URL) {
-    return [{ label: "DATABASE_URL", config: { connectionString: process.env.DATABASE_URL } }];
+function isLocalHost(host) {
+  if (!host) return true;
+  const h = String(host).trim().toLowerCase();
+  if (!h) return true;
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h.startsWith("/");
+}
+
+function isLocalDatabaseUrl(connectionString) {
+  try {
+    const url = new URL(connectionString);
+    return isLocalHost(url.hostname || url.host);
+  } catch {
+    return false;
   }
+}
 
-  const candidates = [{ label: "PG env/default (app/app)", config: defaultEnvConfig() }];
-  if (hasExplicitPgEnv()) return candidates;
-
+function appendLocalFallbackCandidates(candidates) {
   // Helpful local fallbacks for macOS/Linux development where local role matches shell user.
   const socketHosts = ["/tmp", "/var/run/postgresql"];
   for (const socketHost of socketHosts) {
@@ -47,6 +56,10 @@ function buildConnectionCandidates() {
       label: `local socket ${socketHost} (${OS_USER}/postgres)`,
       config: { host: socketHost, port: 5432, user: OS_USER, database: "postgres" },
     });
+    candidates.push({
+      label: `local socket ${socketHost} (postgres/postgres)`,
+      config: { host: socketHost, port: 5432, user: "postgres", database: "postgres" },
+    });
   }
 
   candidates.push({
@@ -57,8 +70,45 @@ function buildConnectionCandidates() {
     label: `localhost (${OS_USER}/postgres)`,
     config: { host: "127.0.0.1", port: 5432, user: OS_USER, database: "postgres" },
   });
+  candidates.push({
+    label: "localhost (postgres/postgres)",
+    config: { host: "127.0.0.1", port: 5432, user: "postgres", database: "postgres" },
+  });
+}
 
-  return candidates;
+function buildConnectionCandidates() {
+  const candidates = [];
+  const hasPgEnv = hasExplicitPgEnv();
+  const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+
+  if (hasDatabaseUrl) {
+    candidates.push({ label: "DATABASE_URL", config: { connectionString: process.env.DATABASE_URL } });
+  }
+
+  if (!hasDatabaseUrl) {
+    candidates.push({ label: hasPgEnv ? "PG env/default" : "PG env/default (app/app)", config: defaultEnvConfig() });
+  } else if (hasPgEnv) {
+    // When both DATABASE_URL and PG* are present, try PG* as secondary fallback.
+    candidates.push({ label: "PG env/default (secondary)", config: defaultEnvConfig() });
+  }
+
+  // Only use local credential/socket fallbacks when target appears local.
+  const localByPgEnv = isLocalHost(defaultEnvConfig().host);
+  const localByDatabaseUrl = hasDatabaseUrl ? isLocalDatabaseUrl(process.env.DATABASE_URL || "") : false;
+  const shouldUseLocalFallbacks = (!hasDatabaseUrl && !hasPgEnv) || localByPgEnv || localByDatabaseUrl;
+
+  if (shouldUseLocalFallbacks) {
+    appendLocalFallbackCandidates(candidates);
+  }
+
+  // Keep candidate order stable while removing exact duplicates.
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.label}:${JSON.stringify(candidate.config)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function sanitizeError(err) {

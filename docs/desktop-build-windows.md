@@ -42,7 +42,7 @@ npm run desktop:db:migrate
 ```
 
 Notes:
-- The migration runner now auto-tries local fallback connections when explicit env vars are not set.
+- The migration runner auto-tries safe local fallback connections when the target host is local, including cases where `PG*` or `DATABASE_URL` point to a missing local role (for example `role "app" does not exist`).
 - It tracks applied files in `public.schema_migrations`, so reruns are safe and only apply pending migrations.
 
 ## Run desktop app in dev mode (Tauri + local web runtime)
