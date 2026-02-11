@@ -33,6 +33,7 @@
    - `npm run desktop:lan:selftest`
    - `npm run desktop:web:build`
    - `npm run desktop:smoke`
+24. Moved Settings UI under Profile route namespace (`/profile/settings`, `/profile/settings/invoice-fields`) and kept legacy `/settings*` routes as compatibility redirects.
 
 ## Pending (Next phase)
 1. Run Tauri native build on Windows build machine and produce signed NSIS installer artifacts.

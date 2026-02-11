@@ -12,7 +12,8 @@ function pageTitle(pathname: string | null) {
     { prefix: '/inventory', label: 'Inventory' },
     { prefix: '/reports', label: 'Dashboard & Reports' },
     { prefix: '/accounting', label: 'Accounting' },
-    { prefix: '/settings', label: 'Settings' },
+    { prefix: '/profile', label: 'Profile & Settings' },
+    { prefix: '/settings', label: 'Profile & Settings' },
     { prefix: '/billing', label: 'Quick Billing' },
   ];
   const hit = map.find((m) => pathname.startsWith(m.prefix));
