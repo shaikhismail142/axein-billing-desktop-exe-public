@@ -8,6 +8,7 @@ import { NextRequest } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
 import { registerPdfFonts } from "@/lib/pdfFonts";
+import { getRequestBusinessId } from "@/lib/platform-context";
 
 /* ---------- helpers ---------- */
 
@@ -29,9 +30,14 @@ async function getTableColumns(client: any, table: string): Promise<Set<string>>
   return new Set<string>(r.rows.map((x: any) => x.col));
 }
 
-async function loadBusinessProfile(client: any) {
+async function loadBusinessProfile(client: any, businessId: number, scoped: boolean) {
   const r = await client.query(
-    `SELECT value_json FROM settings WHERE key IN ('business_profile','business') ORDER BY key LIMIT 1`
+    `SELECT value_json
+       FROM settings
+      WHERE key IN ('business_profile','business')${scoped ? " AND business_id = $1" : ""}
+      ORDER BY key
+      LIMIT 1`,
+    scoped ? [businessId] : []
   );
   const v = r.rows?.[0]?.value_json || {};
   const bp = v.business_profile || v || {};
@@ -47,6 +53,11 @@ async function loadBusinessProfile(client: any) {
     website: bp.website || "",
     gstin: bp.gstin || "",
   };
+}
+
+async function productsTableExists(client: any) {
+  const r = await client.query(`SELECT to_regclass('public.products') IS NOT NULL AS ok`);
+  return !!r.rows?.[0]?.ok;
 }
 
 /* ---------- pdf drawing primitives ---------- */
@@ -111,14 +122,24 @@ function ensureSpace(doc: PDFDocument, needed: number, drawHeader: () => void) {
 
 /* ---------- route ---------- */
 
-export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   await guardApiActivated(true);
   const id = params.id;
+  const businessId = getRequestBusinessId(req, 1);
 
   const client = await pool.connect();
   try {
     const pCols = await getTableColumns(client, "purchases");
     const iCols = await getTableColumns(client, "purchase_items");
+    const hasPurchasesBusiness = pCols.has("business_id");
+    const hasItemsBusiness = iCols.has("business_id");
+    let settingsCols = new Set<string>();
+    try { settingsCols = await getTableColumns(client, "settings"); } catch {}
+    const hasSettingsBusiness = settingsCols.has("business_id");
+    const hasProducts = await productsTableExists(client);
+    let productCols = new Set<string>();
+    if (hasProducts) productCols = await getTableColumns(client, "products");
+    const hasProductsBusiness = hasProducts && productCols.has("business_id");
 
     // Dynamic header columns
     const invNoCol =
@@ -138,9 +159,9 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         ${dateCol ? `to_char(${dateCol}, 'YYYY-MM-DD') AS invoice_date` : "NULL AS invoice_date"},
         ${pCols.has("meta") ? "meta" : "'{}'::jsonb AS meta"}
       FROM purchases
-      WHERE id = $1
+      WHERE id = $1${hasPurchasesBusiness ? " AND business_id = $2" : ""}
     `;
-    const h = await client.query(hdrSql, [id]);
+    const h = await client.query(hdrSql, hasPurchasesBusiness ? [id, businessId] : [id]);
     if (h.rowCount === 0) return new Response("Not found", { status: 404 });
     const P = h.rows[0];
 
@@ -161,6 +182,8 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       "0";
     const descExpr = iCols.has("description") ? "pi.description" : "NULL";
 
+    const itemParams: any[] = [id];
+    const itemBusinessRef = hasItemsBusiness || hasProductsBusiness ? `$${itemParams.push(businessId)}` : null;
     const itemsSql = `
       SELECT
         pi.product_id,
@@ -172,11 +195,14 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
         ${iCols.has("meta") ? "pi.meta" : "'{}'::jsonb AS meta"},
         COALESCE(${descExpr}, p.name, pi.product_id::text) AS product_name
       FROM purchase_items pi
-      LEFT JOIN products p ON p.id::text = pi.product_id::text
-      WHERE pi.purchase_id = $1
+      LEFT JOIN products p
+        ON p.id::text = pi.product_id::text${
+          hasProductsBusiness ? ` AND p.business_id = ${hasItemsBusiness ? "pi.business_id" : itemBusinessRef}` : ""
+        }
+      WHERE pi.purchase_id = $1${hasItemsBusiness ? ` AND pi.business_id = ${itemBusinessRef}` : ""}
       ORDER BY pi.id
     `;
-    const rs = await client.query(itemsSql, [id]);
+    const rs = await client.query(itemsSql, itemParams);
     const items = rs.rows;
 
     // Totals
@@ -189,7 +215,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     }
     const grand = subtotal + taxTotal - discTotal;
 
-    const bp = await loadBusinessProfile(client);
+    const bp = await loadBusinessProfile(client, businessId, hasSettingsBusiness);
 
     // ----- Build PDF -----
     const doc = new PDFDocument({ size: "A4", margin: 36 });

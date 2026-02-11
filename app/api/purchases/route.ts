@@ -6,6 +6,7 @@ export const fetchCache = "force-no-store";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
+import { getRequestBusinessId } from "@/lib/platform-context";
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -73,6 +74,7 @@ export async function GET(req: NextRequest) {
   await guardApiActivated(true);
 
   const { searchParams } = new URL(req.url);
+  const businessId = getRequestBusinessId(req, 1);
   const limit = Math.max(1, Math.min(100, Number(searchParams.get("limit") || 20)));
   const offset = Math.max(0, Number(searchParams.get("offset") || 0));
   const q = (searchParams.get("q") || "").trim().toLowerCase();
@@ -80,6 +82,7 @@ export async function GET(req: NextRequest) {
   const client = await pool.connect();
   try {
     const cols = await getTableColumns(client, "purchases");
+    const hasPurchasesBusiness = cols.has("business_id");
 
     // search field preference
     const invNoCol = cols.has("invoice_no") ? "invoice_no" : (cols.has("bill_no") ? "bill_no" : null);
@@ -87,6 +90,11 @@ export async function GET(req: NextRequest) {
 
     const where: string[] = [];
     const params: any[] = [];
+
+    if (hasPurchasesBusiness) {
+      params.push(businessId);
+      where.push(`business_id = $1`);
+    }
 
     if (q) {
       if (invNoCol) {
@@ -158,6 +166,7 @@ export async function GET(req: NextRequest) {
 /* ----------------------------------- POST --------------------------------- */
 export async function POST(req: NextRequest) {
   await guardApiActivated(true);
+  const businessId = getRequestBusinessId(req, 1);
 
   const body = (await req.json().catch(() => ({}))) as PurchaseCreateIn;
   if (!body || !Array.isArray(body.items) || body.items.length === 0) {
@@ -175,6 +184,8 @@ export async function POST(req: NextRequest) {
 
     const purchasesCols = await getTableColumns(client, "purchases");
     const itemsCols = await getTableColumns(client, "purchase_items");
+    const hasPurchasesBusiness = purchasesCols.has("business_id");
+    const hasItemsBusiness = itemsCols.has("business_id");
 
     // Validate product IDs (avoid FK failure when products table exists)
     const prodTableExists = await client
@@ -182,10 +193,14 @@ export async function POST(req: NextRequest) {
       .then((r: any) => !!r.rows?.[0]?.ok);
 
     if (prodTableExists) {
+      const productCols = await getTableColumns(client, "products");
+      const hasProductsBusiness = productCols.has("business_id");
       const productIds = Array.from(new Set(body.items.map((it) => String(it.product_id))));
       const found = await client.query(
-        `SELECT id::text FROM products WHERE id::text = ANY($1::text[])`,
-        [productIds]
+        `SELECT id::text
+           FROM products
+          WHERE id::text = ANY($1::text[])${hasProductsBusiness ? " AND business_id = $2" : ""}`,
+        hasProductsBusiness ? [productIds, businessId] : [productIds]
       );
       const foundSet = new Set<string>(found.rows.map((r: any) => String(r.id)));
       const missing = productIds.filter((id) => !foundSet.has(String(id)));
@@ -238,6 +253,7 @@ export async function POST(req: NextRequest) {
     const pPh: string[] = [];
     let i = 1;
 
+    if (hasPurchasesBusiness) { pCols.push("business_id"); pVals.push(businessId); pPh.push(`$${i++}`); }
     if (purchasesCols.has("supplier_id")) { pCols.push("supplier_id"); pVals.push(supplier_id); pPh.push(`$${i++}`); }
     if (purchasesCols.has("invoice_no")) { pCols.push("invoice_no"); pVals.push(invoice_no); pPh.push(`$${i++}`); }
     if (purchasesCols.has("bill_no"))     { pCols.push("bill_no");     pVals.push(invoice_no); pPh.push(`$${i++}`); }
@@ -283,10 +299,10 @@ export async function POST(req: NextRequest) {
       const tax  = normTax(it.tax_rate);
       const disc = it.discount == null ? 0 : normMoney(it.discount);
 
-      const cols: string[] = ["purchase_id", "product_id"];
-      const vals: any[] = [purchase_id, it.product_id];
-      const ph: string[] = [`$1`, `$2`];
-      let j = 3;
+      const cols: string[] = [...(hasItemsBusiness ? ["business_id"] : []), "purchase_id", "product_id"];
+      const vals: any[] = [...(hasItemsBusiness ? [businessId] : []), purchase_id, it.product_id];
+      const ph: string[] = vals.map((_, idx) => `$${idx + 1}`);
+      let j = vals.length + 1;
 
       // qty
       if (itemsCols.has("qty")) { cols.push("qty"); vals.push(qty); ph.push(`$${j++}`); }
@@ -347,9 +363,11 @@ export async function POST(req: NextRequest) {
           const ed = dateOrNull(it.exp_date);
           const qty = normQty(it.qty);
 
+          const hasBatchBusiness = bCols.has("business_id");
           const whereParts: string[] = [`product_id = $1`];
           const selParams: any[] = [it.product_id];
           let pIdx = 2;
+          if (hasBatchBusiness) { whereParts.push(`business_id = $${pIdx++}`); selParams.push(businessId); }
 
           if (bnCol)  { whereParts.push(`COALESCE(LOWER(${bnCol}), '') = LOWER($${pIdx++})`); selParams.push(bn || ""); }
           if (mfgCol) { whereParts.push(`COALESCE(${mfgCol}::date, '1900-01-01') = COALESCE($${pIdx++}::date, '1900-01-01')`); selParams.push(md); }
@@ -360,12 +378,17 @@ export async function POST(req: NextRequest) {
 
           if (sel.rowCount > 0 && qtyCol) {
             const bid = String(sel.rows[0].id);
-            await client.query(`UPDATE ${batchesTable} SET ${qtyCol} = ${qtyCol} + $1 WHERE id = $2`, [qty, bid]);
+            await client.query(
+              `UPDATE ${batchesTable}
+                  SET ${qtyCol} = ${qtyCol} + $1
+                WHERE id = $2${hasBatchBusiness ? " AND business_id = $3" : ""}`,
+              hasBatchBusiness ? [qty, bid, businessId] : [qty, bid]
+            );
           } else {
-            const insCols: string[] = ["product_id"];
-            const insPh: string[] = ["$1"];
-            const insVals: any[] = [it.product_id];
-            let k = 2;
+            const insCols: string[] = [...(hasBatchBusiness ? ["business_id"] : []), "product_id"];
+            const insVals: any[] = [...(hasBatchBusiness ? [businessId] : []), it.product_id];
+            const insPh: string[] = insVals.map((_, idx) => `$${idx + 1}`);
+            let k = insVals.length + 1;
 
             if (bnCol)  { insCols.push(bnCol);  insPh.push(`NULLIF($${k++},'')`); insVals.push(bn); }
             if (mfgCol) { insCols.push(mfgCol); insPh.push(`$${k++}`); insVals.push(md); }
@@ -386,8 +409,8 @@ export async function POST(req: NextRequest) {
           await client.query(
             `UPDATE purchases
                SET meta = jsonb_set(coalesce(meta,'{}'::jsonb), '{posted}', 'true'::jsonb, true)
-             WHERE id = $1`,
-            [purchase_id]
+             WHERE id = $1${hasPurchasesBusiness ? " AND business_id = $2" : ""}`,
+            hasPurchasesBusiness ? [purchase_id, businessId] : [purchase_id]
           );
         }
       }

@@ -5,6 +5,7 @@ export const fetchCache = "force-no-store";
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
+import { getRequestBusinessId } from "@/lib/platform-context";
 
 const asNum = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const dateOrNull = (s?: string | null) =>
@@ -28,12 +29,18 @@ async function productsTableExists(client: any) {
 export async function GET(_: NextRequest, { params }: { params: { id: string } }) {
   await guardApiActivated(true);
   const id = params.id;
+  const businessId = getRequestBusinessId(_, 1);
 
   const client = await pool.connect();
   try {
     const pCols = await getTableColumns(client, "purchases");
     const iCols = await getTableColumns(client, "purchase_items");
+    const hasPurchasesBusiness = pCols.has("business_id");
+    const hasItemsBusiness = iCols.has("business_id");
     const hasProducts = await productsTableExists(client);
+    let productCols = new Set<string>();
+    if (hasProducts) productCols = await getTableColumns(client, "products");
+    const hasProductsBusiness = hasProducts && productCols.has("business_id");
 
     const selectHdr = [
       pCols.has("id") ? "id" : "NULL AS id",
@@ -59,7 +66,12 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       pCols.has("meta") ? "meta" : "'{}'::jsonb AS meta",
       pCols.has("created_at") ? "created_at" : "now() AS created_at",
     ].join(", ");
-    const hdr = await client.query(`SELECT ${selectHdr} FROM purchases WHERE id = $1`, [id]);
+    const hdr = await client.query(
+      `SELECT ${selectHdr}
+         FROM purchases
+        WHERE id = $1${hasPurchasesBusiness ? " AND business_id = $2" : ""}`,
+      hasPurchasesBusiness ? [id, businessId] : [id]
+    );
     if (hdr.rowCount === 0) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
 
     // items + product label
@@ -79,10 +91,20 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
       iCols.has("meta") ? "pi.meta" : "'{}'::jsonb AS meta",
     ].join(", ");
 
-    const joinProducts = hasProducts ? "LEFT JOIN products pr ON pr.id::text = pi.product_id::text" : "";
+    const itemParams: any[] = [id];
+    const itemBusinessRef = hasItemsBusiness || hasProductsBusiness ? `$${itemParams.push(businessId)}` : null;
+    const joinProducts = hasProducts
+      ? `LEFT JOIN products pr ON pr.id::text = pi.product_id::text${
+          hasProductsBusiness ? ` AND pr.business_id = ${hasItemsBusiness ? "pi.business_id" : itemBusinessRef}` : ""
+        }`
+      : "";
     const items = await client.query(
-      `SELECT ${selectIt} FROM purchase_items pi ${joinProducts} WHERE pi.purchase_id = $1 ORDER BY ${iCols.has("id") ? "pi.id" : "1"}`,
-      [id]
+      `SELECT ${selectIt}
+         FROM purchase_items pi
+         ${joinProducts}
+        WHERE pi.purchase_id = $1${hasItemsBusiness ? ` AND pi.business_id = ${itemBusinessRef}` : ""}
+        ORDER BY ${iCols.has("id") ? "pi.id" : "1"}`,
+      itemParams
     );
 
     return NextResponse.json({ ok: true, purchase: hdr.rows[0], items: items.rows });
@@ -97,6 +119,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   await guardApiActivated(true);
   const id = params.id;
+  const businessId = getRequestBusinessId(req, 1);
   const body = await req.json().catch(() => ({}));
 
   const client = await pool.connect();
@@ -105,6 +128,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const pCols = await getTableColumns(client, "purchases");
     const iCols = await getTableColumns(client, "purchase_items");
+    const hasPurchasesBusiness = pCols.has("business_id");
+    const hasItemsBusiness = iCols.has("business_id");
+
+    const exists = await client.query(
+      `SELECT 1
+         FROM purchases
+        WHERE id = $1${hasPurchasesBusiness ? " AND business_id = $2" : ""}
+        LIMIT 1`,
+      hasPurchasesBusiness ? [id, businessId] : [id]
+    );
+    if (!exists.rowCount) {
+      await client.query("ROLLBACK").catch(() => {});
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
 
     const fields: string[] = [];
     const values: any[] = [];
@@ -131,34 +168,59 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
 
     if (fields.length) {
-      await client.query(`UPDATE purchases SET ${fields.join(", ")} WHERE id = $${i}`, [...values, id]);
+      await client.query(
+        `UPDATE purchases
+            SET ${fields.join(", ")}
+          WHERE id = $${i}${hasPurchasesBusiness ? ` AND business_id = $${i + 1}` : ""}`,
+        hasPurchasesBusiness ? [...values, id, businessId] : [...values, id]
+      );
     }
 
     if (body.amount_paid !== undefined) {
       const totRes = await client.query(
-        `SELECT COALESCE(grand_total, total_amount, 0) AS total FROM purchases WHERE id=$1`,
-        [id]
+        `SELECT COALESCE(grand_total, total_amount, 0) AS total
+           FROM purchases
+          WHERE id=$1${hasPurchasesBusiness ? " AND business_id = $2" : ""}`,
+        hasPurchasesBusiness ? [id, businessId] : [id]
       );
       const total = asNum(totRes.rows?.[0]?.total ?? 0);
       const paid = asNum(body.amount_paid);
       const pending = Math.max(total - paid, 0);
       const status = paid >= total - 0.01 ? "Paid" : paid > 0 ? "Partial" : "Pending";
       if (pCols.has("pending_amount")) {
-        await client.query(`UPDATE purchases SET pending_amount=$1 WHERE id=$2`, [pending, id]);
+        await client.query(
+          `UPDATE purchases
+              SET pending_amount=$1
+            WHERE id=$2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness ? [pending, id, businessId] : [pending, id]
+        );
       }
       if (pCols.has("payment_status")) {
-        await client.query(`UPDATE purchases SET payment_status=$1 WHERE id=$2`, [status, id]);
+        await client.query(
+          `UPDATE purchases
+              SET payment_status=$1
+            WHERE id=$2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness ? [status, id, businessId] : [status, id]
+        );
       }
       if (pCols.has("meta")) {
         await client.query(
-          `UPDATE purchases SET meta = coalesce(meta,'{}') || $1::jsonb WHERE id = $2`,
-          [JSON.stringify({ amount_paid: paid, pending_amount: pending, payment_status: status }), id]
+          `UPDATE purchases
+              SET meta = coalesce(meta,'{}') || $1::jsonb
+            WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness
+            ? [JSON.stringify({ amount_paid: paid, pending_amount: pending, payment_status: status }), id, businessId]
+            : [JSON.stringify({ amount_paid: paid, pending_amount: pending, payment_status: status }), id]
         );
       }
     }
 
     if (Array.isArray(body.items)) {
-      await client.query(`DELETE FROM purchase_items WHERE purchase_id = $1`, [id]);
+      await client.query(
+        `DELETE FROM purchase_items
+          WHERE purchase_id = $1${hasItemsBusiness ? " AND business_id = $2" : ""}`,
+        hasItemsBusiness ? [id, businessId] : [id]
+      );
 
       let subtotal = 0, total_tax = 0, discount_total = 0;
       for (const it of body.items) {
@@ -168,10 +230,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         total_tax += (asNum(it.tax_rate) / 100) * (qty * cost);
         discount_total += asNum(it.discount);
 
-        const cols: string[] = ["purchase_id", "product_id"];
-        const vals: any[] = [id, it.product_id];
-        const ph: string[] = [`$1`, `$2`];
-        let j = 3;
+        const cols: string[] = [...(hasItemsBusiness ? ["business_id"] : []), "purchase_id", "product_id"];
+        const vals: any[] = [...(hasItemsBusiness ? [businessId] : []), id, it.product_id];
+        const ph: string[] = vals.map((_, idx) => `$${idx + 1}`);
+        let j = vals.length + 1;
 
         if (iCols.has("qty"))           { cols.push("qty");           vals.push(qty); ph.push(`$${j++}`); }
         if (iCols.has("purchase_rate")) { cols.push("purchase_rate"); vals.push(cost); ph.push(`$${j++}`); }
@@ -200,17 +262,51 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }
 
       // write totals to whichever columns exist
-      if (pCols.has("subtotal"))       await client.query(`UPDATE purchases SET subtotal = $1 WHERE id = $2`, [subtotal, id]);
-      if (pCols.has("tax_total"))      await client.query(`UPDATE purchases SET tax_total = $1 WHERE id = $2`, [total_tax, id]);
-      if (pCols.has("discount_total")) await client.query(`UPDATE purchases SET discount_total = $1 WHERE id = $2`, [discount_total, id]);
+      if (pCols.has("subtotal")) {
+        await client.query(
+          `UPDATE purchases SET subtotal = $1 WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness ? [subtotal, id, businessId] : [subtotal, id]
+        );
+      }
+      if (pCols.has("tax_total")) {
+        await client.query(
+          `UPDATE purchases SET tax_total = $1 WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness ? [total_tax, id, businessId] : [total_tax, id]
+        );
+      }
+      if (pCols.has("discount_total")) {
+        await client.query(
+          `UPDATE purchases SET discount_total = $1 WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness ? [discount_total, id, businessId] : [discount_total, id]
+        );
+      }
       const grand = subtotal + total_tax - discount_total;
-      if (pCols.has("grand_total"))    await client.query(`UPDATE purchases SET grand_total = $1 WHERE id = $2`, [grand, id]);
-      if (pCols.has("total_amount"))   await client.query(`UPDATE purchases SET total_amount = $1 WHERE id = $2`, [grand, id]);
-      if (pCols.has("total_tax"))      await client.query(`UPDATE purchases SET total_tax = $1 WHERE id = $2`, [total_tax, id]);
+      if (pCols.has("grand_total")) {
+        await client.query(
+          `UPDATE purchases SET grand_total = $1 WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness ? [grand, id, businessId] : [grand, id]
+        );
+      }
+      if (pCols.has("total_amount")) {
+        await client.query(
+          `UPDATE purchases SET total_amount = $1 WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness ? [grand, id, businessId] : [grand, id]
+        );
+      }
+      if (pCols.has("total_tax")) {
+        await client.query(
+          `UPDATE purchases SET total_tax = $1 WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness ? [total_tax, id, businessId] : [total_tax, id]
+        );
+      }
       if (!pCols.has("subtotal") && pCols.has("meta")) {
         await client.query(
-          `UPDATE purchases SET meta = jsonb_set(coalesce(meta,'{}'), '{totals}', $1::jsonb, true) WHERE id = $2`,
-          [JSON.stringify({ subtotal, total_tax, discount_total, total_amount: grand }), id]
+          `UPDATE purchases
+              SET meta = jsonb_set(coalesce(meta,'{}'), '{totals}', $1::jsonb, true)
+            WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+          hasPurchasesBusiness
+            ? [JSON.stringify({ subtotal, total_tax, discount_total, total_amount: grand }), id, businessId]
+            : [JSON.stringify({ subtotal, total_tax, discount_total, total_amount: grand }), id]
         );
       }
 
@@ -220,18 +316,31 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         const pending = Math.max(grand - paid, 0);
         const status = paid >= grand - 0.01 ? "Paid" : paid > 0 ? "Partial" : "Pending";
         if (pCols.has("amount_paid")) {
-          await client.query(`UPDATE purchases SET amount_paid=$1 WHERE id=$2`, [paid, id]);
+          await client.query(
+            `UPDATE purchases SET amount_paid=$1 WHERE id=$2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+            hasPurchasesBusiness ? [paid, id, businessId] : [paid, id]
+          );
         }
         if (pCols.has("pending_amount")) {
-          await client.query(`UPDATE purchases SET pending_amount=$1 WHERE id=$2`, [pending, id]);
+          await client.query(
+            `UPDATE purchases SET pending_amount=$1 WHERE id=$2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+            hasPurchasesBusiness ? [pending, id, businessId] : [pending, id]
+          );
         }
         if (pCols.has("payment_status")) {
-          await client.query(`UPDATE purchases SET payment_status=$1 WHERE id=$2`, [status, id]);
+          await client.query(
+            `UPDATE purchases SET payment_status=$1 WHERE id=$2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+            hasPurchasesBusiness ? [status, id, businessId] : [status, id]
+          );
         }
         if (pCols.has("meta")) {
           await client.query(
-            `UPDATE purchases SET meta = coalesce(meta,'{}') || $1::jsonb WHERE id = $2`,
-            [JSON.stringify({ amount_paid: paid, pending_amount: pending, payment_status: status }), id]
+            `UPDATE purchases
+                SET meta = coalesce(meta,'{}') || $1::jsonb
+              WHERE id = $2${hasPurchasesBusiness ? " AND business_id = $3" : ""}`,
+            hasPurchasesBusiness
+              ? [JSON.stringify({ amount_paid: paid, pending_amount: pending, payment_status: status }), id, businessId]
+              : [JSON.stringify({ amount_paid: paid, pending_amount: pending, payment_status: status }), id]
           );
         }
       }
@@ -248,14 +357,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   await guardApiActivated(true);
   const id = params.id;
+  const businessId = getRequestBusinessId(req, 1);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`DELETE FROM purchase_items WHERE purchase_id = $1`, [id]);
-    await client.query(`DELETE FROM purchases WHERE id = $1`, [id]);
+    const pCols = await getTableColumns(client, "purchases");
+    const iCols = await getTableColumns(client, "purchase_items");
+    const hasPurchasesBusiness = pCols.has("business_id");
+    const hasItemsBusiness = iCols.has("business_id");
+
+    await client.query(
+      `DELETE FROM purchase_items
+        WHERE purchase_id = $1${hasItemsBusiness ? " AND business_id = $2" : ""}`,
+      hasItemsBusiness ? [id, businessId] : [id]
+    );
+    const del = await client.query(
+      `DELETE FROM purchases
+        WHERE id = $1${hasPurchasesBusiness ? " AND business_id = $2" : ""}`,
+      hasPurchasesBusiness ? [id, businessId] : [id]
+    );
+    if (!del.rowCount) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
     await client.query("COMMIT");
     return NextResponse.json({ ok: true });
   } catch (err: any) {
