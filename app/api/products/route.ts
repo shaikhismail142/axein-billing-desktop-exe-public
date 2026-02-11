@@ -1,6 +1,7 @@
 // app/api/products/route.ts
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
+import { getRequestBusinessId } from "@/app/lib/platform-context";
 
 /* =========================
    GET /api/products
@@ -10,6 +11,7 @@ import { pool } from "@/app/lib/db";
 ========================= */
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const businessId = getRequestBusinessId(req, 1);
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
   const perPage = Math.min(200, Math.max(1, Number(url.searchParams.get("perPage") || 20)));
   const q = (url.searchParams.get("q") || "").trim();
@@ -20,19 +22,30 @@ export async function GET(req: Request) {
 
   // Check if updated_at exists (best-effort)
   let hasUpdatedAt = false;
+  let hasBusinessId = false;
   try {
     const u = await pool.query(
-      `SELECT 1 FROM information_schema.columns
-       WHERE table_schema='public' AND table_name='products' AND column_name='updated_at'`
+      `SELECT LOWER(column_name) AS col
+         FROM information_schema.columns
+        WHERE table_schema='public'
+          AND table_name='products'
+          AND column_name IN ('updated_at', 'business_id')`
     );
-    hasUpdatedAt = (u.rowCount ?? u.rows?.length ?? 0) > 0;
+    const cols = new Set((u.rows || []).map((r: any) => String(r.col || "").toLowerCase()));
+    hasUpdatedAt = cols.has("updated_at");
+    hasBusinessId = cols.has("business_id");
   } catch {
     hasUpdatedAt = false;
+    hasBusinessId = false;
   }
 
   // Build WHERE (name or meta->>'sku')
   const where: string[] = [];
   const params: unknown[] = [];
+  if (hasBusinessId) {
+    params.push(businessId);
+    where.push(`p.business_id = $${params.length}`);
+  }
   if (q) {
     params.push(`%${q}%`);
     const i = params.length;
@@ -284,6 +297,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const payload = await req.json().catch(() => ({} as any));
+    const businessId = getRequestBusinessId(req, 1);
 
     const name = String(payload.name ?? "").trim();
     if (!name) {
@@ -307,20 +321,48 @@ export async function POST(req: Request) {
 
     // Try to insert category into column if it exists (best-effort)
     let rows: any[] = [];
+    const colsRes = await pool.query(
+      `SELECT LOWER(column_name) AS col
+         FROM information_schema.columns
+        WHERE table_schema='public'
+          AND table_name='products'
+          AND column_name IN ('category', 'business_id')`
+    );
+    const cols = new Set((colsRes.rows || []).map((r: any) => String(r.col || "").toLowerCase()));
+    const hasCategory = cols.has("category");
+    const hasBusinessId = cols.has("business_id");
+
     try {
+      const insertCols = [
+        ...(hasBusinessId ? ["business_id"] : []),
+        "name",
+        ...(hasCategory ? ["category"] : []),
+        "meta",
+      ];
+      const insertValues = [
+        ...(hasBusinessId ? [businessId] : []),
+        name,
+        ...(hasCategory ? [category || null] : []),
+        JSON.stringify(meta),
+      ];
+      const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(", ");
+
       const r = await pool.query(
-        `INSERT INTO products (name, category, meta)
-         VALUES ($1, $2, $3::jsonb)
+        `INSERT INTO products (${insertCols.join(", ")})
+         VALUES (${placeholders})
          RETURNING id, name, meta`,
-        [name, category || null, JSON.stringify(meta)]
+        insertValues
       );
       rows = r.rows;
     } catch {
+      const fallbackCols = [...(hasBusinessId ? ["business_id"] : []), "name", "meta"];
+      const fallbackValues = [...(hasBusinessId ? [businessId] : []), name, JSON.stringify(meta)];
+      const fallbackPlaceholders = fallbackValues.map((_, i) => `$${i + 1}`).join(", ");
       const r = await pool.query(
-        `INSERT INTO products (name, meta)
-         VALUES ($1, $2::jsonb)
+        `INSERT INTO products (${fallbackCols.join(", ")})
+         VALUES (${fallbackPlaceholders})
          RETURNING id, name, meta`,
-        [name, JSON.stringify(meta)]
+        fallbackValues
       );
       rows = r.rows;
     }

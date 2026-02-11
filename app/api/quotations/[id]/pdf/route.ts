@@ -1,5 +1,6 @@
 // app/api/quotations/[id]/pdf/route.ts
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/lib/platform-context";
 import PDFDocument from "pdfkit";
 import fs from "fs";
 
@@ -73,6 +74,22 @@ const fmtDate = (v?: string | null) => (v ? new Date(v).toLocaleDateString("en-I
 const fmtDateTime = (d = new Date()) =>
   d.toLocaleString("en-IN", { hour12: false }); // e.g., 27/09/2025, 16:35:12
 
+async function getBusinessScopedTables(tables: string[]) {
+  try {
+    const rs = await pool.query(
+      `SELECT table_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND column_name = 'business_id'
+          AND table_name = ANY($1::text[])`,
+      [tables]
+    );
+    return new Set((rs.rows || []).map((r: any) => String(r.table_name || "").toLowerCase()));
+  } catch {
+    return new Set<string>();
+  }
+}
+
 /** Fonts */
 function tryRegisterFonts(doc: any) {
   const paths = [
@@ -111,20 +128,35 @@ function normalizeBusinessProfile(raw: any): Required<BusinessProfile> {
 }
 
 /** ------------ route ------------- */
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
+  const businessId = getRequestBusinessId(req, 1);
   if (!Number.isFinite(id)) {
     return new Response(JSON.stringify({ error: "Invalid id" }), { status: 400 });
   }
+
+  const scopedTables = await getBusinessScopedTables(["quotations", "customers", "quotation_items", "settings"]);
+  const hasQuotationBusiness = scopedTables.has("quotations");
+  const hasCustomerBusiness = scopedTables.has("customers");
+  const hasQuotationItemBusiness = scopedTables.has("quotation_items");
+  const hasSettingsBusiness = scopedTables.has("settings");
+
+  const quoteParams: unknown[] = [id];
+  const quoteBusinessRef = hasQuotationBusiness ? `$${quoteParams.push(businessId)}` : null;
+  const customerBusinessJoin = hasCustomerBusiness
+    ? ` and c.business_id = ${quoteBusinessRef || `$${quoteParams.push(businessId)}`}`
+    : "";
 
   // Quotation + customer name
   const qRs = await pool.query(
     `select q.*, c.name as customer_name
        from quotations q
-       left join customers c on c.id = q.customer_id
-      where q.id=$1
+       left join customers c on c.id = q.customer_id${customerBusinessJoin}
+      where q.id=$1${quoteBusinessRef ? ` and q.business_id = ${quoteBusinessRef}` : ""}${
+      !quoteBusinessRef && hasCustomerBusiness ? " and c.id is not null" : ""
+    }
       limit 1`,
-    [id]
+    quoteParams
   );
   if (qRs.rowCount === 0) {
     return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });
@@ -132,21 +164,30 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const q = qRs.rows[0] as Quotation;
 
   // Items
+  const itemParams: unknown[] = [id];
+  const itemBusinessFilter = hasQuotationItemBusiness ? ` and qi.business_id = $${itemParams.push(businessId)}` : "";
   const itRs = await pool.query(
     `select qi.description, qi.qty, qi.price, qi.tax, qi.discount, qi.batch_no, qi.exp_date,
             COALESCE(p.category, p.meta->>'category') AS category,
             COALESCE(p.hsn_code, p.hsn, p.meta->>'hsn_code') AS hsn_code
        from quotation_items qi
        left join products p on p.id = qi.product_id
-      where qi.quotation_id=$1
+      where qi.quotation_id=$1${itemBusinessFilter}
       order by qi.id asc`,
-    [id]
+    itemParams
   );
   const items = itRs.rows as QItem[];
 
   // Business profile: prefer key='business_profile'; fallback to 'business'; latest row wins
+  const settingsParams: unknown[] = [];
+  const settingsBusinessFilter = hasSettingsBusiness ? ` and business_id = $${settingsParams.push(businessId)}` : "";
   const sRs = await pool.query(
-    `select value_json from settings where key in ('business_profile','business') order by id desc limit 1`
+    `select value_json
+       from settings
+      where key in ('business_profile','business')${settingsBusinessFilter}
+      order by id desc
+      limit 1`,
+    settingsParams
   );
   const rawVal = sRs.rows?.[0]?.value_json || {};
   const business = normalizeBusinessProfile(rawVal);

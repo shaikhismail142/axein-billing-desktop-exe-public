@@ -3,11 +3,30 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getRequestBusinessId } from "@/app/lib/platform-context";
+
+async function hasBusinessColumn() {
+  try {
+    const rs = await pool.query(
+      `SELECT 1
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'customers'
+          AND column_name = 'business_id'
+        LIMIT 1`
+    );
+    return (rs.rowCount || 0) > 0;
+  } catch {
+    return false;
+  }
+}
 
 /** GET /api/customers?q=...   → { items: [{id,name,phone,gstin,address}] } */
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
+    const businessId = getRequestBusinessId(req, 1);
+    const scoped = await hasBusinessColumn();
     const q = (url.searchParams.get("q") || "").trim();
     const limit = Math.min(50, Number(url.searchParams.get("limit") || 20));
 
@@ -15,9 +34,10 @@ export async function GET(req: Request) {
       const rs = await pool.query(
         `SELECT id, name, phone, gstin, address
            FROM customers
+          ${scoped ? "WHERE business_id = $1" : ""}
           ORDER BY name ASC
-          LIMIT $1`,
-        [limit]
+          LIMIT $${scoped ? 2 : 1}`,
+        scoped ? [businessId, limit] : [limit]
       );
       return NextResponse.json({ items: rs.rows });
     }
@@ -25,12 +45,13 @@ export async function GET(req: Request) {
     const rs = await pool.query(
       `SELECT id, name, phone, gstin, address
          FROM customers
-        WHERE name ILIKE $1
-           OR phone ILIKE $1
-           OR gstin ILIKE $1
+        WHERE ${scoped ? "business_id = $1 AND" : ""}
+          (name ILIKE $${scoped ? 2 : 1}
+           OR phone ILIKE $${scoped ? 2 : 1}
+           OR gstin ILIKE $${scoped ? 2 : 1})
         ORDER BY name ASC
-        LIMIT $2`,
-      [`%${q}%`, limit]
+        LIMIT $${scoped ? 3 : 2}`,
+      scoped ? [businessId, `%${q}%`, limit] : [`%${q}%`, limit]
     );
     return NextResponse.json({ items: rs.rows });
   } catch (err) {
@@ -43,20 +64,30 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const businessId = getRequestBusinessId(req, 1);
+    const scoped = await hasBusinessColumn();
     if (!body?.name || typeof body.name !== "string") {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
-    const rs = await pool.query(
-      `INSERT INTO customers(name, phone, gstin, address)
-       VALUES($1, $2, $3, $4)
-       RETURNING id`,
-      [
-        body.name.trim(),
-        body.phone ? String(body.phone) : null,
-        body.gstin ? String(body.gstin) : null,
-        body.address ? String(body.address) : null,
-      ]
-    );
+    const params = [
+      body.name.trim(),
+      body.phone ? String(body.phone) : null,
+      body.gstin ? String(body.gstin) : null,
+      body.address ? String(body.address) : null,
+    ];
+    const rs = scoped
+      ? await pool.query(
+          `INSERT INTO customers(business_id, name, phone, gstin, address)
+           VALUES($1, $2, $3, $4, $5)
+           RETURNING id`,
+          [businessId, ...params]
+        )
+      : await pool.query(
+          `INSERT INTO customers(name, phone, gstin, address)
+           VALUES($1, $2, $3, $4)
+           RETURNING id`,
+          params
+        );
     return NextResponse.json({ id: rs.rows[0].id }, { status: 201 });
   } catch (err) {
     console.error("POST /api/customers failed:", err);

@@ -1,8 +1,26 @@
 // app/api/quotations/bulk-delete/route.ts
 import { NextResponse } from "next/server";
 import { getDb } from "@/app/lib/db";
+import { getRequestBusinessId } from "@/app/lib/platform-context";
+
+async function getBusinessScopedTables(client: any, tables: string[]) {
+  try {
+    const rs = await client.query(
+      `SELECT table_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND column_name = 'business_id'
+          AND table_name = ANY($1::text[])`,
+      [tables]
+    );
+    return new Set((rs.rows || []).map((r: any) => String(r.table_name || "").toLowerCase()));
+  } catch {
+    return new Set<string>();
+  }
+}
 
 export async function POST(req: Request) {
+  const businessId = getRequestBusinessId(req, 1);
   const body = await req.json().catch(() => null);
   if (!body) return new NextResponse("Bad JSON", { status: 400 });
 
@@ -10,12 +28,23 @@ export async function POST(req: Request) {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
+    const scopedTables = await getBusinessScopedTables(client, ["quotations", "customers", "quotation_items"]);
+    const hasQuotationBusiness = scopedTables.has("quotations");
+    const hasCustomerBusiness = scopedTables.has("customers");
+    const hasQuotationItemBusiness = scopedTables.has("quotation_items");
 
     const where: string[] = [];
-    const params: unknown[] = [];
+    const params: unknown[] = hasQuotationBusiness || hasCustomerBusiness ? [businessId] : [];
+    const businessRef = params.length ? `$1` : null;
 
     if (body.all) {
       const q = (body.q || "").trim();
+      if (hasQuotationBusiness && businessRef) {
+        where.push(`q.business_id = ${businessRef}`);
+      }
+      if (!hasQuotationBusiness && hasCustomerBusiness) {
+        where.push(`c.id IS NOT NULL`);
+      }
 
       if (q) {
         params.push(`%${q}%`);
@@ -27,7 +56,9 @@ export async function POST(req: Request) {
         `
         SELECT q.id
         FROM quotations q
-        LEFT JOIN customers c ON c.id = q.customer_id
+        LEFT JOIN customers c ON c.id = q.customer_id${
+          hasCustomerBusiness && businessRef ? ` AND c.business_id = ${businessRef}` : ""
+        }
         ${whereSql}
         `,
         params
@@ -43,8 +74,21 @@ export async function POST(req: Request) {
       return new NextResponse("No ids to delete", { status: 400 });
     }
 
-    await client.query(`DELETE FROM quotation_items WHERE quotation_id = ANY($1::int[])`, [ids]);
-    const del = await client.query(`DELETE FROM quotations WHERE id = ANY($1::int[])`, [ids]);
+    const deleteItemParams: unknown[] = [ids];
+    const itemBusinessFilter = hasQuotationItemBusiness ? ` AND business_id = $${deleteItemParams.push(businessId)}` : "";
+    await client.query(
+      `DELETE FROM quotation_items WHERE quotation_id = ANY($1::int[])${itemBusinessFilter}`,
+      deleteItemParams
+    );
+
+    const deleteQuotationParams: unknown[] = [ids];
+    const quotationBusinessFilter = hasQuotationBusiness
+      ? ` AND business_id = $${deleteQuotationParams.push(businessId)}`
+      : "";
+    const del = await client.query(
+      `DELETE FROM quotations WHERE id = ANY($1::int[])${quotationBusinessFilter}`,
+      deleteQuotationParams
+    );
     await client.query("COMMIT");
 
     const deleted =

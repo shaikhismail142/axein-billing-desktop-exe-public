@@ -1,6 +1,7 @@
 // app/api/quotations/[id]/convert/route.ts
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import { getRequestBusinessId } from '@/lib/platform-context';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,18 +18,57 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+async function getBusinessScopedTables(client: any, tables: string[]) {
+  try {
+    const rs = await client.query(
+      `SELECT table_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND column_name = 'business_id'
+          AND table_name = ANY($1::text[])`,
+      [tables]
+    );
+    return new Set((rs.rows || []).map((r: any) => String(r.table_name || '').toLowerCase()));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export async function POST(req: Request, { params }: { params: { id: string } }) {
   const qid = Number(params.id);
+  const businessId = getRequestBusinessId(req, 1);
   if (!Number.isFinite(qid)) {
     return NextResponse.json({ ok: false, error: 'Invalid quotation id' }, { status: 400 });
   }
 
+  const scopedTables = await getBusinessScopedTables(pool, [
+    'sales',
+    'sale_items',
+    'quotations',
+    'quotation_items',
+    'customers',
+  ]);
+  const hasSalesBusiness = scopedTables.has('sales');
+  const hasSaleItemsBusiness = scopedTables.has('sale_items');
+  const hasQuotationBusiness = scopedTables.has('quotations');
+  const hasQuotationItemsBusiness = scopedTables.has('quotation_items');
+  const hasCustomerBusiness = scopedTables.has('customers');
+
   // Idempotency: meta.source_quotation_id
   const existed = (
-    await pool.query(
-      `select id from sales where (meta->>'source_quotation_id')::int = $1 limit 1`,
-      [qid]
-    )
+    hasSalesBusiness
+      ? await pool.query(
+          `select id
+             from sales
+            where (meta->>'source_quotation_id')::int = $1
+              and business_id = $2
+            limit 1`,
+          [qid, businessId]
+        )
+      : await pool.query(
+          `select id from sales where (meta->>'source_quotation_id')::int = $1 limit 1`,
+          [qid]
+        )
   ).rows[0];
   if (existed?.id) {
     return NextResponse.json({
@@ -40,14 +80,21 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   }
 
   // Load quotation header
+  const quoteParams: unknown[] = [qid];
+  const quoteBusinessRef = hasQuotationBusiness ? `$${quoteParams.push(businessId)}` : null;
+  const customerBusinessJoin = hasCustomerBusiness
+    ? ` and c.business_id = ${quoteBusinessRef || `$${quoteParams.push(businessId)}`}`
+    : '';
   const quotation = (
     await pool.query(
       `select q.*, c.id as customer_id, c.name as customer_name
          from quotations q
-         left join customers c on c.id = q.customer_id
-        where q.id=$1
+         left join customers c on c.id = q.customer_id${customerBusinessJoin}
+        where q.id=$1${quoteBusinessRef ? ` and q.business_id = ${quoteBusinessRef}` : ''}${
+        !quoteBusinessRef && hasCustomerBusiness ? ' and c.id is not null' : ''
+      }
         limit 1`,
-      [qid]
+      quoteParams
     )
   ).rows[0];
   if (!quotation) {
@@ -55,13 +102,15 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   }
 
   // Load items
+  const itemParams: unknown[] = [qid];
+  const itemBusinessFilter = hasQuotationItemsBusiness ? ` and business_id = $${itemParams.push(businessId)}` : '';
   const qItems = (
     await pool.query(
       `select id, description, qty, price, tax, discount, product_id
          from quotation_items
-        where quotation_id = $1
+        where quotation_id = $1${itemBusinessFilter}
         order by id asc`,
-      [qid]
+      itemParams
     )
   ).rows;
 
@@ -75,17 +124,46 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
     const meta = {
       source_quotation_id: quotation.id,
+      source_quotation_number: quotation.quotation_number ?? null,
       amount_paid: 0,
       is_return: false,
       notes: quotation?.meta?.notes ?? null,
     };
 
+    const saleCols = [
+      ...(hasSalesBusiness ? ['business_id'] : []),
+      'customer_id',
+      'invoice_date',
+      'subtotal',
+      'tax_total',
+      'total',
+      'meta',
+      'created_at',
+    ];
+    const saleValues = [
+      ...(hasSalesBusiness ? [businessId] : []),
+      quotation.customer_id ?? null,
+      0,
+      0,
+      0,
+      JSON.stringify(meta),
+    ];
+    const salePlaceholders = [
+      ...(hasSalesBusiness ? [`$1`] : []),
+      `$${hasSalesBusiness ? 2 : 1}`,
+      'now()',
+      `$${hasSalesBusiness ? 3 : 2}`,
+      `$${hasSalesBusiness ? 4 : 3}`,
+      `$${hasSalesBusiness ? 5 : 4}`,
+      `$${hasSalesBusiness ? 6 : 5}::jsonb`,
+      'now()',
+    ];
     const saleRow = (
       await client.query(
-        `insert into sales (customer_id, invoice_date, subtotal, tax_total, total, meta, created_at)
-         values ($1, now(), 0, 0, 0, $2::jsonb, now())
+        `insert into sales (${saleCols.join(', ')})
+         values (${salePlaceholders.join(', ')})
          returning id`,
-        [quotation.customer_id ?? null, JSON.stringify(meta)]
+        saleValues
       )
     ).rows[0];
     const saleId = saleRow.id;
@@ -123,29 +201,57 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
       const taxSafe     = clamp(round2(tax),     -9_999_999_999, 9_999_999_999);
       const totalSafe   = clamp(round2(lineTotal), -9_999_999_999, 9_999_999_999);
 
-      await client.query(
-        `insert into sale_items (sale_id, name, gst_slab, qty, unit_price, discount_pct, taxable, tax, total)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [
-          saleId,
-          name,
-          round2(gst_slab),
-          round2(qty),
-          round2(unit_price),
-          round2(discount_pct),
-          taxableSafe,
-          taxSafe,
-          totalSafe,
-        ]
-      );
+      if (hasSaleItemsBusiness) {
+        await client.query(
+          `insert into sale_items (business_id, sale_id, name, gst_slab, qty, unit_price, discount_pct, taxable, tax, total)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [
+            businessId,
+            saleId,
+            name,
+            round2(gst_slab),
+            round2(qty),
+            round2(unit_price),
+            round2(discount_pct),
+            taxableSafe,
+            taxSafe,
+            totalSafe,
+          ]
+        );
+      } else {
+        await client.query(
+          `insert into sale_items (sale_id, name, gst_slab, qty, unit_price, discount_pct, taxable, tax, total)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [
+            saleId,
+            name,
+            round2(gst_slab),
+            round2(qty),
+            round2(unit_price),
+            round2(discount_pct),
+            taxableSafe,
+            taxSafe,
+            totalSafe,
+          ]
+        );
+      }
     }
 
-    await client.query(
-      `update sales
-          set subtotal=$2, tax_total=$3, total=$4
-        where id=$1`,
-      [saleId, round2(subtotal), round2(tax_total), round2(total)]
-    );
+    if (hasSalesBusiness) {
+      await client.query(
+        `update sales
+            set subtotal=$2, tax_total=$3, total=$4
+          where id=$1 and business_id = $5`,
+        [saleId, round2(subtotal), round2(tax_total), round2(total), businessId]
+      );
+    } else {
+      await client.query(
+        `update sales
+            set subtotal=$2, tax_total=$3, total=$4
+          where id=$1`,
+        [saleId, round2(subtotal), round2(tax_total), round2(total)]
+      );
+    }
 
     await client.query('COMMIT');
     return NextResponse.json({ ok: true, sale_id: saleId, redirect: `/invoices/${saleId}` });

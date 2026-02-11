@@ -1,9 +1,26 @@
 // app/api/quotations/export/route.ts
 import { NextResponse } from "next/server";
 import { getDb } from "@/app/lib/db";
+import { getRequestBusinessId } from "@/app/lib/platform-context";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function getBusinessScopedTables(client: any, tables: string[]) {
+  try {
+    const rs = await client.query(
+      `SELECT table_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND column_name = 'business_id'
+          AND table_name = ANY($1::text[])`,
+      [tables]
+    );
+    return new Set((rs.rows || []).map((r: any) => String(r.table_name || "").toLowerCase()));
+  } catch {
+    return new Set<string>();
+  }
+}
 
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -13,14 +30,27 @@ function csvEscape(value: unknown): string {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const businessId = getRequestBusinessId(req, 1);
   const q = url.searchParams.get("q")?.trim() || "";
   const from = url.searchParams.get("from")?.trim() || "";
   const to = url.searchParams.get("to")?.trim() || "";
   const idsP = url.searchParams.get("ids")?.trim() || "";
 
+  const db = await getDb();
+  const scopedTables = await getBusinessScopedTables(db, ["quotations", "customers"]);
+  const hasQuotationBusiness = scopedTables.has("quotations");
+  const hasCustomerBusiness = scopedTables.has("customers");
+
   const where: string[] = [];
-  const params: any[] = [];
-  let p = 1;
+  const params: any[] = hasQuotationBusiness || hasCustomerBusiness ? [businessId] : [];
+  const businessRef = params.length ? `$1` : null;
+  if (hasQuotationBusiness && businessRef) {
+    where.push(`q.business_id = ${businessRef}`);
+  }
+  if (!hasQuotationBusiness && hasCustomerBusiness) {
+    where.push(`c.id IS NOT NULL`);
+  }
+  let p = params.length + 1;
 
   if (idsP) {
     const ids = idsP
@@ -52,8 +82,9 @@ export async function GET(req: Request) {
   }
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-
-  const db = await getDb();
+  const customerJoin = `LEFT JOIN customers c ON c.id = q.customer_id${
+    hasCustomerBusiness && businessRef ? ` AND c.business_id = ${businessRef}` : ""
+  }`;
   const { rows } = await db.query(
     `
     SELECT
@@ -83,7 +114,7 @@ export async function GET(req: Request) {
         0
       )::float8 AS total_amount
     FROM quotations q
-    LEFT JOIN customers c ON c.id = q.customer_id
+    ${customerJoin}
     LEFT JOIN quotation_items qi ON qi.quotation_id = q.id
     ${whereSql}
     GROUP BY q.id, q.quotation_number, q.quotation_date, q.valid_until, c.name
