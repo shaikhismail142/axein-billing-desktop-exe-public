@@ -8,19 +8,38 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   await guardApiActivated(true); // allow trial
-  const url = new URL(_req.url);
+  const access = await requireAnyPermission(
+    req,
+    ["perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage", "perm.reports.view"],
+    "Forbidden"
+  );
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
+  const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
   const client = await pool.connect();
   try {
     // near_expiry_days comes from settings (key='inventory' -> value_json.near_expiry_days), default 30
     let nearDays = 30;
     try {
+      const sCols = await client.query(
+        `SELECT LOWER(column_name) AS col
+           FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='settings'`
+      );
+      const hasSettingsBusiness = (sCols.rows || []).some((r: any) => String(r.col) === "business_id");
       const s = await client.query(
         `SELECT (value_json->>'near_expiry_days')::int AS d
-         FROM settings WHERE key = 'inventory' LIMIT 1`
+         FROM settings
+         WHERE key = 'inventory'${hasSettingsBusiness ? " AND business_id = $1" : ""}
+         ORDER BY id DESC
+         LIMIT 1`,
+        hasSettingsBusiness ? [businessId] : []
       );
       const d = s.rows?.[0]?.d;
       if (Number.isFinite(d) && d > 0 && d < 3650) nearDays = d;
@@ -59,9 +78,25 @@ export async function GET(_req: NextRequest) {
     const expCol = pick("expiry_date", "exp_date", "expiration_date", "expiry_on", "expire_on");
     const mfgCol = pick("mfg_date", "mfg", "manufacture_date", "mfg_on");
     const qtyCol = pick("qty", "quantity", "stock_qty");
+    const hasBatchBusiness = batchCols.has("business_id");
+    const productColsRes = await client.query(
+      `SELECT LOWER(column_name) AS col
+       FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='products'`
+    );
+    const productCols = new Set<string>((productColsRes.rows || []).map((r: any) => String(r.col)));
+    const hasProductsBusiness = productCols.has("business_id");
 
     const params: any[] = [];
     const whereParts: string[] = [];
+    if (hasBatchBusiness) {
+      params.push(businessId);
+      whereParts.push(`b.business_id = $${params.length}`);
+    }
+    if (hasProductsBusiness) {
+      params.push(businessId);
+      whereParts.push(`p.business_id = $${params.length}`);
+    }
     if (q) {
       params.push(`%${q}%`);
       const idx = params.length;
@@ -86,7 +121,9 @@ export async function GET(_req: NextRequest) {
           b.${expCol}::date AS expiry_date,
           ${qtyExpr} AS qty
         FROM ${batchTable} b
-        LEFT JOIN products p ON p.id = b.${productIdCol}
+        LEFT JOIN products p ON p.id = b.${productIdCol}${
+          hasProductsBusiness && hasBatchBusiness ? " AND p.business_id = b.business_id" : ""
+        }
         WHERE b.${expCol} IS NOT NULL
         ${whereSql}
         ORDER BY b.${expCol} ASC NULLS LAST
@@ -116,6 +153,10 @@ export async function GET(_req: NextRequest) {
     `;
     const pParams: any[] = [];
     const pWhere: string[] = [`${expExpr} IS NOT NULL`];
+    if (hasProductsBusiness) {
+      pParams.push(businessId);
+      pWhere.push(`p.business_id = $${pParams.length}`);
+    }
     if (q) {
       pParams.push(`%${q}%`);
       const idx = pParams.length;

@@ -23,6 +23,7 @@
 15. Scoped product support endpoints (search, import/export, low-stock, bulk delete, product detail updates) to business context with mixed-schema fallback handling.
 16. Hardened purchases APIs (list/create/detail/update/delete/PDF) with business-aware filters, inserts, joins, and mixed-schema compatibility checks.
 17. Hardened inventory stock APIs (batches, adjustments, stock adjust, inventory settings/expiry) with RBAC gates and business-aware scoping in both route and stock service layers.
+18. Hardened accounting/support APIs (debts, alerts, categories, legacy expiry, generic settings) with permission checks and business-aware data filtering/upserts.
 
 ## Pending (Next phase)
 1. Install/verify Rust toolchain and run actual Tauri builds on Windows.

@@ -8,6 +8,7 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 async function getColumns(client: any, table: string): Promise<Set<string>> {
   const r = await client.query(
@@ -24,15 +25,30 @@ async function tableExists(client: any, table: string): Promise<boolean> {
   return !!r.rows?.[0]?.ok;
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   await guardApiActivated(true);
+  const access = await requireAnyPermission(
+    req,
+    ["perm.inventory.manage", "perm.reports.view", "perm.purchases.manage", "perm.sales.manage"],
+    "Forbidden"
+  );
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
   const client = await pool.connect();
   try {
     // 1) near_expiry_days from settings (inventory)
     let nearDays = 30;
     try {
+      const sCols = await getColumns(client, "settings").catch(() => new Set<string>());
+      const hasSettingsBusiness = sCols.has("business_id");
       const s = await client.query(
-        `SELECT (value_json->>'near_expiry_days')::int AS d FROM settings WHERE key='inventory' LIMIT 1`
+        `SELECT (value_json->>'near_expiry_days')::int AS d
+           FROM settings
+          WHERE key='inventory'${hasSettingsBusiness ? " AND business_id = $1" : ""}
+          ORDER BY id DESC
+          LIMIT 1`,
+        hasSettingsBusiness ? [businessId] : []
       );
       const d = s.rows?.[0]?.d;
       if (Number.isFinite(d) && d > 0 && d < 3650) nearDays = d;
@@ -43,6 +59,7 @@ export async function GET(_req: NextRequest) {
     const hasStockQty = productCols.has("stock_qty");
     const hasLow = productCols.has("low_stock_threshold");
     const hasSku = productCols.has("sku");
+    const hasProductsBusiness = productCols.has("business_id");
 
     const stockExpr = hasMeta
       ? "COALESCE((meta->>'stock_qty')::numeric, 0)"
@@ -66,7 +83,7 @@ export async function GET(_req: NextRequest) {
              ${stockExpr} AS stock_qty,
              ${lowExpr} AS low_stock_threshold
       FROM products
-      WHERE ${stockExpr} <= ${lowExpr}
+      WHERE ${hasProductsBusiness ? "business_id = $1 AND " : ""}${stockExpr} <= ${lowExpr}
       ORDER BY ${stockExpr} ASC
       LIMIT 10;
     `;
@@ -74,10 +91,22 @@ export async function GET(_req: NextRequest) {
     const lowCountSql = `
       SELECT COUNT(*)::int AS cnt
       FROM products
-      WHERE ${stockExpr} <= ${lowExpr};
+      WHERE ${hasProductsBusiness ? "business_id = $1 AND " : ""}${stockExpr} <= ${lowExpr};
     `;
 
     const hasBatches = await tableExists(client, "product_batches");
+    const batchCols = hasBatches ? await getColumns(client, "product_batches").catch(() => new Set<string>()) : new Set<string>();
+    const hasBatchBusiness = hasBatches && batchCols.has("business_id");
+    const expiryParams: any[] = [];
+    const expiryBusinessFilterParts: string[] = [];
+    if (hasBatchBusiness) {
+      expiryBusinessFilterParts.push(`b.business_id = $${expiryParams.push(businessId)}`);
+    }
+    if (hasProductsBusiness) {
+      expiryBusinessFilterParts.push(`p.business_id = $${expiryParams.push(businessId)}`);
+    }
+    const expiryBusinessFilter = expiryBusinessFilterParts.length ? `AND ${expiryBusinessFilterParts.join(" AND ")}` : "";
+
     const expirySql = hasBatches
       ? `
         WITH base AS (
@@ -86,17 +115,20 @@ export async function GET(_req: NextRequest) {
                  (b.expiry_date::date - CURRENT_DATE) AS days_until,
                  b.qty::numeric AS qty
           FROM product_batches b
-          LEFT JOIN products p ON p.id = b.product_id
+          LEFT JOIN products p ON p.id = b.product_id${
+            hasProductsBusiness && hasBatchBusiness ? " AND p.business_id = b.business_id" : ""
+          }
           WHERE b.expiry_date IS NOT NULL
+          ${expiryBusinessFilter}
         )
         SELECT * FROM base ORDER BY expiry_date ASC NULLS LAST;
       `
       : null;
 
     const [lowRes, lowCountRes, expRes] = await Promise.all([
-      client.query(lowStockSql),
-      client.query(lowCountSql),
-      expirySql ? client.query(expirySql) : Promise.resolve({ rows: [] }),
+      client.query(lowStockSql, hasProductsBusiness ? [businessId] : []),
+      client.query(lowCountSql, hasProductsBusiness ? [businessId] : []),
+      expirySql ? client.query(expirySql, expiryParams) : Promise.resolve({ rows: [] }),
     ]);
 
     const lowItems = lowRes.rows.map(r => ({
@@ -148,6 +180,7 @@ export async function GET(_req: NextRequest) {
     const pendingExpr = pCols.has("pending_amount")
       ? "p.pending_amount"
       : `GREATEST(${totalExpr} - ${paidExpr}, 0)`;
+    const hasPurchasesBusiness = pCols.has("business_id");
     const billDateExpr = pCols.has("bill_date")
       ? "p.bill_date"
       : "p.created_at";
@@ -155,6 +188,8 @@ export async function GET(_req: NextRequest) {
       ? "COALESCE(sup.name, p.meta->>'vendor_name', 'Unknown')"
       : "COALESCE(sup.name, 'Unknown')";
     const statusFilter = hasPStatus ? "AND p.status <> 'draft'" : "";
+    const purchasesBusinessFilter = hasPurchasesBusiness ? "AND p.business_id = $1" : "";
+    const purchasesParams = hasPurchasesBusiness ? [businessId] : [];
 
     const debtRows = (
       await client.query(
@@ -162,17 +197,20 @@ export async function GET(_req: NextRequest) {
         SELECT ${vendorNameExpr} AS vendor_name,
                SUM(${pendingExpr}) AS pending,
                MAX(${billDateExpr}) AS last_tx
-          FROM purchases p
+         FROM purchases p
           LEFT JOIN suppliers sup ON sup.id = p.supplier_id
          WHERE COALESCE(${pendingExpr}, 0) > 0
+         ${purchasesBusinessFilter}
          ${statusFilter}
          GROUP BY 1
          ORDER BY pending DESC
          LIMIT 6
-        `
+        `,
+        purchasesParams
       )
     ).rows as { vendor_name: string; pending: number; last_tx: string | null }[];
 
+    const debtCountParams = hasPurchasesBusiness ? [businessId] : [];
     const debtCountRes = await client.query(
       `
       SELECT COUNT(*)::int AS cnt
@@ -180,10 +218,12 @@ export async function GET(_req: NextRequest) {
           SELECT 1
             FROM purchases p
            WHERE COALESCE(${pendingExpr}, 0) > 0
+           ${hasPurchasesBusiness ? "AND p.business_id = $1" : ""}
            ${statusFilter}
            GROUP BY COALESCE(CAST(p.supplier_id AS TEXT), 'unknown')
         ) x
-      `
+      `,
+      debtCountParams
     );
     const debtCount = Number(debtCountRes.rows?.[0]?.cnt || 0);
     const debtTotal = debtRows.reduce((a, b) => a + Number(b.pending || 0), 0);

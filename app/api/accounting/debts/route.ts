@@ -4,6 +4,7 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 type DebtRow = {
   vendor_key: string;
@@ -39,13 +40,22 @@ async function getColumns(client: any, table: string): Promise<Set<string>> {
   return new Set<string>(r.rows.map((x: any) => x.col));
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   await guardApiActivated(true);
+  const access = await requireAnyPermission(
+    req,
+    ["perm.reports.view", "perm.payments.manage", "perm.purchases.manage"],
+    "Forbidden"
+  );
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
 
   const client = await pool.connect();
   try {
     const pCols = await getColumns(client, "purchases");
     const sCols = await getColumns(client, "sales");
+    const pHasBusiness = pCols.has("business_id");
+    const sHasBusiness = sCols.has("business_id");
     const hasPMeta = pCols.has("meta");
     const hasPStatus = pCols.has("status");
 
@@ -80,6 +90,8 @@ export async function GET(_req: NextRequest) {
       : "COALESCE(sup.name, 'Unknown')";
     const statusFilter = hasPStatus ? "AND p.status <> 'draft'" : "";
 
+    const purchaseParams: any[] = [];
+    const purchaseBusinessFilter = pHasBusiness ? `AND p.business_id = $${purchaseParams.push(businessId)}` : "";
     const rows = (
       await client.query(
         `
@@ -96,9 +108,11 @@ export async function GET(_req: NextRequest) {
         FROM purchases p
         LEFT JOIN suppliers sup ON sup.id = p.supplier_id
         WHERE COALESCE(${pendingExpr}, 0) > 0
+        ${purchaseBusinessFilter}
         ${statusFilter}
         ORDER BY ${billDateExpr} DESC NULLS LAST
-        `
+        `,
+        purchaseParams
       )
     ).rows as DebtRow[];
 
@@ -178,8 +192,11 @@ export async function GET(_req: NextRequest) {
     const salesPendingExpr = sCols.has("pending_amount")
       ? "s.pending_amount"
       : `GREATEST(${salesTotalExpr} - ${salesPaidExpr}, 0)`;
+    const receivableParams: any[] = [];
+    const salesBusinessFilter = sHasBusiness ? `WHERE s.business_id = $${receivableParams.push(businessId)}` : "";
     const receivablesRes = await client.query(
-      `SELECT COALESCE(SUM(${salesPendingExpr}),0) AS receivables FROM sales s`
+      `SELECT COALESCE(SUM(${salesPendingExpr}),0) AS receivables FROM sales s ${salesBusinessFilter}`,
+      receivableParams
     );
     const receivables = Number(receivablesRes.rows?.[0]?.receivables || 0);
 
@@ -196,6 +213,8 @@ export async function GET(_req: NextRequest) {
     const invNoExpr = sCols.has("invoice_no") ? "s.invoice_no" : "NULL";
     const invDateExpr = sCols.has("invoice_date") ? "s.invoice_date" : "s.created_at";
 
+    const customerParams: any[] = [];
+    const customerBusinessFilter = sHasBusiness ? `AND s.business_id = $${customerParams.push(businessId)}` : "";
     const custRows = (
       await client.query(
         `
@@ -212,8 +231,10 @@ export async function GET(_req: NextRequest) {
         FROM sales s
         LEFT JOIN customers c ON c.id = s.customer_id
         WHERE COALESCE(${salesPendingExpr}, 0) > 0
+        ${customerBusinessFilter}
         ORDER BY ${invDateExpr} DESC NULLS LAST
-        `
+        `,
+        customerParams
       )
     ).rows as CustomerDebtRow[];
 
