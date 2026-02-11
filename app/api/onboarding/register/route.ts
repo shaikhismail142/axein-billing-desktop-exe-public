@@ -4,7 +4,11 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
-import { isBusinessType, resolveBusinessTemplate } from "@/app/lib/business-templates";
+import {
+  isBusinessType,
+  resolveBusinessTemplate,
+  resolveTemplateNavigationItems,
+} from "@/app/lib/business-templates";
 
 type RegisterBody = {
   business_name?: string;
@@ -61,6 +65,7 @@ export async function POST(req: Request) {
   }
 
   const template = resolveBusinessTemplate(businessType);
+  const templateNavItems = resolveTemplateNavigationItems(template.key);
   const codeBase = normalizeCode(businessName) || "axein-business";
 
   const client = await pool.connect();
@@ -102,6 +107,8 @@ export async function POST(req: Request) {
         JSON.stringify({
           template: template.key,
           navigation: template.navigation,
+          navigation_items: templateNavItems,
+          invoice_layout: template.invoiceLayout,
           workflow_hints: template.workflowHints,
         }),
       ]
@@ -110,17 +117,29 @@ export async function POST(req: Request) {
     for (const [idx, field] of template.defaultInvoiceFields.entries()) {
       await client.query(
         `INSERT INTO invoice_custom_fields
-          (business_id, field_key, label, data_type, required, visible, position, applies_to, preset_scope)
+          (business_id, field_key, label, data_type, required, visible, position, applies_to, preset_scope, config_json)
          VALUES
-          ($1, $2, $3, 'text', $4, $5, $6, 'invoice', $7)
+          ($1, $2, $3, $4, $5, $6, $7, 'invoice', $8, $9::jsonb)
          ON CONFLICT (business_id, field_key)
          DO UPDATE SET
             label = EXCLUDED.label,
+            data_type = EXCLUDED.data_type,
             required = EXCLUDED.required,
             visible = EXCLUDED.visible,
             position = EXCLUDED.position,
+            config_json = EXCLUDED.config_json,
             updated_at = NOW()`,
-        [business.id, field.key, field.label, field.required, field.visible, idx + 1, template.key]
+        [
+          business.id,
+          field.key,
+          field.label,
+          field.data_type || "text",
+          field.required,
+          field.visible,
+          idx + 1,
+          template.key,
+          JSON.stringify({ source: "template_onboarding" }),
+        ]
       );
     }
 

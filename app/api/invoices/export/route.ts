@@ -68,7 +68,8 @@ export async function GET(req: Request) {
       COALESCE(s.pending_amount, GREATEST(s.total - COALESCE(s.amount_paid, (s.meta->>'amount_paid')::numeric, 0), 0)) AS pending_amount,
       COALESCE(NULLIF(s.payment_status,''), (s.meta->>'payment_status')) AS payment_status,
       COALESCE(NULLIF(s.payment_method,''), (s.meta->>'payment_method')) AS payment_method,
-      (s.meta->>'notes') AS notes
+      (s.meta->>'notes') AS notes,
+      (s.meta->'custom_fields') AS custom_fields
     FROM sales s
     LEFT JOIN customers c ON c.id = s.customer_id
     ${whereSql}
@@ -92,6 +93,7 @@ export async function GET(req: Request) {
     "payment_status",
     "payment_method",
     "notes",
+    "custom_fields_json",
   ].join(","));
 
   for (const r of rows) {
@@ -109,6 +111,11 @@ export async function GET(req: Request) {
       csvEscape(r.payment_status ?? ""),
       csvEscape(r.payment_method ?? ""),
       csvEscape(r.notes ?? ""),
+      csvEscape(
+        r.custom_fields && typeof r.custom_fields === "object"
+          ? JSON.stringify(r.custom_fields)
+          : ""
+      ),
     ].join(","));
   }
 

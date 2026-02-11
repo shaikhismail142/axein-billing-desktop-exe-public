@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
-import { listBusinessTemplates } from "@/app/lib/business-templates";
+import { listBusinessTemplates, resolveTemplateNavigationItems } from "@/app/lib/business-templates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ items: listBusinessTemplates() });
+  const items = listBusinessTemplates().map((template) => ({
+    ...template,
+    navigation_items: resolveTemplateNavigationItems(template.key),
+  }));
+  return NextResponse.json({ items });
 }

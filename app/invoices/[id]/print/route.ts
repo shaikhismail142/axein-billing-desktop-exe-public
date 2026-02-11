@@ -19,6 +19,23 @@ function fmtDateIST12h(dt: string | Date | null | undefined) {
   }).format(d);
 }
 
+function escapeHtml(input: unknown) {
+  return String(input ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function prettifyFieldLabel(key: string) {
+  return key
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) {
@@ -54,6 +71,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
             (s.meta->>'patient_name')                          AS patient_name,
             (s.meta->>'doctor_name')                           AS doctor_name,
             (s.meta->>'dc_no')                                 AS dc_no,
+            (s.meta->'custom_fields')                          AS custom_fields,
             c.name AS customer_name, c.phone AS customer_phone,
             c.gstin AS customer_gstin, c.address AS customer_address,
             c.city AS customer_city, c.state AS customer_state, c.pincode AS customer_pin
@@ -85,6 +103,13 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const balanceDue = Number(
     s.pending_amount ?? Math.max(Number(s.total || 0) - Number(s.amount_paid || 0), 0)
   );
+  const customFieldEntries = Object.entries(
+    (s.custom_fields && typeof s.custom_fields === "object" ? s.custom_fields : {}) as Record<string, unknown>
+  ).filter(([key, value]) => {
+    const k = String(key || "").toLowerCase();
+    if (k === "patient_name" || k === "doctor_name" || k === "dc_no") return false;
+    return value != null && String(value).trim() !== "";
+  });
 
   const html = `<!doctype html>
 <html lang="en">
@@ -175,6 +200,17 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       ${s.customer_phone ? `<div>Phone: ${s.customer_phone}</div>` : ""}
     </div>` : ""}
 
+  ${
+    customFieldEntries.length > 0
+      ? `<div style="margin-top:10px">
+           <b>Additional Fields:</b>
+           ${customFieldEntries
+             .map(([key, value]) => `<div>${escapeHtml(prettifyFieldLabel(key))}: ${escapeHtml(value)}</div>`)
+             .join("")}
+         </div>`
+      : ""
+  }
+
   <table>
     <thead>
       <tr>
@@ -246,8 +282,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     s.notes || s.terms
       ? `<div class="notes no-break">
            <h4>Notes / Terms</h4>
-           ${s.notes ? `<p>${String(s.notes).replace(/</g,"&lt;")}</p>` : ""}
-           ${s.terms ? `<p>${String(s.terms).replace(/</g,"&lt;")}</p>` : ""}
+           ${s.notes ? `<p>${escapeHtml(s.notes)}</p>` : ""}
+           ${s.terms ? `<p>${escapeHtml(s.terms)}</p>` : ""}
          </div>`
       : ''
   }

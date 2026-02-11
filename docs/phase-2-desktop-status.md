@@ -13,6 +13,9 @@
 5. Added desktop UI bridge for runtime detection and desktop-safe drag/drop handling.
 6. Added health endpoint for desktop runtime checks.
 7. Added Windows build documentation and command flow.
+8. Added LAN host/client foundation with secure pairing, client approval, role assignment, and sync event APIs.
+9. Added template-aware navigation API and runtime sidebar loading.
+10. Added invoice custom field management API/UI and wired custom fields into billing save + invoice print/PDF/export outputs.
 
 ## Pending (Next phase)
 1. Install/verify Rust toolchain and run actual Tauri builds on Windows.

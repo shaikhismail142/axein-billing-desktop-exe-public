@@ -32,6 +32,7 @@ type NewSaleBody = {
   terms?: string | null;               // NEW
   extra_label?: string | null;         // NEW
   extra_amount?: number | string | null; // NEW
+  custom_fields?: Record<string, unknown> | null;
 
   allow_negative_stock?: boolean;
 
@@ -44,6 +45,28 @@ function nstr(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s === "" ? null : s;
+}
+
+function normalizeCustomFields(input: unknown): Record<string, string | number> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const out: Record<string, string | number> = {};
+  for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
+    const key = String(rawKey || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 50);
+    if (!key) continue;
+
+    if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+      out[key] = rawValue;
+      continue;
+    }
+    const value = nstr(rawValue);
+    if (value != null) out[key] = value.slice(0, 200);
+  }
+  return out;
 }
 
 function round2(n: number): number {
@@ -399,8 +422,15 @@ export async function POST(req: Request) {
   const notes = nstr(payload.notes);
   const terms = nstr(payload.terms);
   const extra_label = nstr(payload.extra_label) || (extra_amount > 0 ? "Additional Charge" : null);
-  const patient_name = nstr(payload.patient_name);
-  const doctor_name = nstr(payload.doctor_name);
+  const customFields = normalizeCustomFields(payload.custom_fields);
+  const patient_name =
+    nstr(payload.patient_name) ||
+    nstr(customFields.patient_name) ||
+    null;
+  const doctor_name =
+    nstr(payload.doctor_name) ||
+    nstr(customFields.doctor_name) ||
+    null;
 
   const client = await pool.connect();
   try {
@@ -441,6 +471,7 @@ export async function POST(req: Request) {
       patient_name,
       doctor_name,
       dc_no,
+      custom_fields: customFields,
     };
 
     const saleCols: string[] = [];

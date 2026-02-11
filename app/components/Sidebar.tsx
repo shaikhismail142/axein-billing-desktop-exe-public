@@ -2,23 +2,31 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 type SidebarProps = { open?: boolean; onClose?: () => void; collapsed?: boolean };
 
-const nav = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/dashboard/reports', label: 'Reports' },
-  { href: '/products', label: 'Products' },
-  { href: '/quotations', label: 'Quotations' },
-  { href: '/invoices', label: 'Invoices' },
-  { href: '/accounting', label: 'Accounting' },
-  { href: '/inventory/low-stock', label: 'Low stock' },
-  { href: '/profile', label: 'Profile' },
+type NavItem = {
+  key: string;
+  href: string;
+  label: string;
+};
+
+const FALLBACK_NAV: NavItem[] = [
+  { key: 'dashboard', href: '/dashboard', label: 'Dashboard & Reports' },
+  { key: 'billing', href: '/billing', label: 'Quick Billing' },
+  { key: 'invoices', href: '/invoices', label: 'Invoices' },
+  { key: 'quotations', href: '/quotations', label: 'Quotations' },
+  { key: 'products', href: '/products', label: 'Products' },
+  { key: 'inventory', href: '/inventory/low-stock', label: 'Low Stock' },
+  { key: 'purchases', href: '/inventory/purchases', label: 'Purchases' },
+  { key: 'accounting', href: '/accounting', label: 'Accounting' },
+  { key: 'profile', href: '/profile', label: 'Profile' },
 ];
 
 export default function Sidebar({ open = false, onClose, collapsed = false }: SidebarProps) {
   const pathname = usePathname();
+  const [nav, setNav] = useState<NavItem[]>(FALLBACK_NAV);
 
   useEffect(() => {
     if (!open) return;
@@ -26,6 +34,30 @@ export default function Sidebar({ open = false, onClose, collapsed = false }: Si
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, [open]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/profile/navigation', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !Array.isArray(data?.items)) return;
+        const items = data.items
+          .map((item: any) => ({
+            key: String(item?.key || "").trim(),
+            href: String(item?.href || "").trim(),
+            label: String(item?.label || "").trim(),
+          }))
+          .filter((item: NavItem) => item.key && item.href && item.label);
+        if (active && items.length > 0) setNav(items);
+      } catch {
+        // Keep fallback navigation when profile API is unavailable.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const Nav = (
     <nav className={`space-y-1 ${collapsed ? "p-3" : "p-4"}`}>

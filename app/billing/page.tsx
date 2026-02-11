@@ -38,6 +38,16 @@ type Item = {
   exp_date?: string | null;
 };
 
+type CustomInvoiceField = {
+  id: number;
+  field_key: string;
+  label: string;
+  data_type: "text" | "number" | "date";
+  required: boolean;
+  visible: boolean;
+  position: number;
+};
+
 function inr(n: number) {
   const amt = (n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `INR (Rs/-) ${amt}`;
@@ -63,8 +73,8 @@ export default function Billing() {
   const [terms, setTerms] = useState("");
   const [extraLabel, setExtraLabel] = useState<string>("Service Charge");
   const [extraAmount, setExtraAmount] = useState<number>(0);
-  const [patientName, setPatientName] = useState<string>("");
-  const [doctorName, setDoctorName] = useState<string>("");
+  const [customFields, setCustomFields] = useState<CustomInvoiceField[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
 
   // Payment
   const [paymentMode, setPaymentMode] = useState<"paid" | "partial" | "pending">("paid");
@@ -81,6 +91,33 @@ export default function Billing() {
         if (typeof j?.notes_default === 'string') setNotes(j.notes_default);
         if (typeof j?.terms_default === 'string') setTerms(j.terms_default);
       } catch { /* ignore */ }
+    })();
+  }, []);
+
+  // -------- Load custom invoice fields ----------
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`/api/settings/invoice-custom-fields?applies_to=invoice&visible=1`, { cache: "no-store" });
+        if (!r.ok) return;
+        const j = await r.json();
+        const list = Array.isArray(j?.items) ? j.items : [];
+        setCustomFields(
+          list
+            .map((row: any) => ({
+              id: Number(row.id),
+              field_key: String(row.field_key || ""),
+              label: String(row.label || ""),
+              data_type: String(row.data_type || "text") as "text" | "number" | "date",
+              required: Boolean(row.required),
+              visible: row.visible !== false,
+              position: Number(row.position || 100),
+            }))
+            .filter((row: CustomInvoiceField) => row.field_key && row.label)
+        );
+      } catch {
+        // Keep billing flow working even when custom-field API is unavailable.
+      }
     })();
   }, []);
 
@@ -176,13 +213,29 @@ export default function Billing() {
   // -------- Save sale ----------
   async function save() {
     if (!items.length) return alert('No items in bill');
+
+    const orderedCustomFields = [...customFields].sort(
+      (a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id
+    );
+    const customFieldsPayload: Record<string, string> = {};
+    for (const field of orderedCustomFields) {
+      const value = String(customFieldValues[field.field_key] || "").trim();
+      if (field.required && !value) {
+        return alert(`Please fill required field: ${field.label}`);
+      }
+      if (value) customFieldsPayload[field.field_key] = value;
+    }
+
     try {
       setSaving(true);
+      const patientName = customFieldsPayload.patient_name || null;
+      const doctorName = customFieldsPayload.doctor_name || null;
       const payload = {
         customer_id: customerId,
         customer_name: customerId ? undefined : (customerName || '').trim() || undefined,
-        patient_name: (patientName || '').trim() || null,
-        doctor_name: (doctorName || '').trim() || null,
+        patient_name: patientName,
+        doctor_name: doctorName,
+        custom_fields: customFieldsPayload,
         notes: (notes || "").trim() || null,
         terms: (terms || "").trim() || null,
         extra_label: (extraLabel || "").trim() || null,
@@ -276,32 +329,36 @@ export default function Billing() {
           )}
         </div>
 
-        {/* Patient / Doctor */}
-        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-          <div className="grid md:grid-cols-2 gap-3">
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--muted)' }}>Patient Name</label>
-              <input
-                className="input"
-                placeholder="Patient name"
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-              />
+        {/* Template and custom invoice fields */}
+        {customFields.length > 0 ? (
+          <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+            <div className="grid md:grid-cols-2 gap-3">
+              {[...customFields]
+                .sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id)
+                .map((field) => (
+                  <div key={field.field_key}>
+                    <label style={{ fontSize: 12, color: "var(--muted)" }}>
+                      {field.label}{field.required ? " *" : ""}
+                    </label>
+                    <input
+                      className="input"
+                      type={field.data_type === "number" ? "number" : field.data_type === "date" ? "date" : "text"}
+                      value={customFieldValues[field.field_key] || ""}
+                      onChange={(e) =>
+                        setCustomFieldValues((prev) => ({
+                          ...prev,
+                          [field.field_key]: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
             </div>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--muted)' }}>Doctor Name</label>
-              <input
-                className="input"
-                placeholder="Doctor name"
-                value={doctorName}
-                onChange={(e) => setDoctorName(e.target.value)}
-              />
+            <div className="mt-2 text-xs opacity-70">
+              These fields are configured from Settings &gt; Invoice Custom Fields and shown in invoice outputs.
             </div>
           </div>
-          <div className="mt-2 text-xs opacity-70">
-            These details will appear on the invoice and print.
-          </div>
-        </div>
+        ) : null}
 
         {/* Product search / scan */}
         <div style={{ position: 'relative', marginBottom: 12 }}>

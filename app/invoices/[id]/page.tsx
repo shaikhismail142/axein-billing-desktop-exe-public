@@ -22,6 +22,7 @@ type Sale = {
   patient_name?: string | null;
   doctor_name?: string | null;
   dc_no?: string | null;
+  custom_fields?: Record<string, unknown> | null;
 };
 
 type SaleItem = {
@@ -50,6 +51,14 @@ const inr = (n: number) => {
 };
 const toNum = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
+function prettifyFieldLabel(key: string) {
+  return key
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 export default async function InvoicePage({ params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) notFound();
@@ -65,6 +74,7 @@ export default async function InvoicePage({ params }: { params: { id: string } }
             (s.meta->>'patient_name') AS patient_name,
             (s.meta->>'doctor_name')  AS doctor_name,
             (s.meta->>'dc_no')        AS dc_no,
+            (s.meta->'custom_fields') AS custom_fields,
             c.name AS customer_name
        FROM sales s
        LEFT JOIN customers c ON c.id = s.customer_id
@@ -98,6 +108,12 @@ export default async function InvoicePage({ params }: { params: { id: string } }
   const amountPaid = toNum(s.amount_paid, 0);
   const balance = toNum(s.pending_amount ?? Math.max(0, grand - amountPaid), 0);
   const paymentStatus = s.payment_status || (amountPaid >= grand - 0.01 ? "Paid" : amountPaid > 0 ? "Partial" : "Pending");
+  const customFieldRows = Object.entries((s.custom_fields && typeof s.custom_fields === "object" ? s.custom_fields : {}) as Record<string, unknown>)
+    .filter(([key, value]) => {
+      const k = String(key || "").toLowerCase();
+      if (k === "patient_name" || k === "doctor_name" || k === "dc_no") return false;
+      return value !== null && value !== undefined && String(value).trim() !== "";
+    });
 
   return (
     <div className="p-6 space-y-4">
@@ -111,6 +127,15 @@ export default async function InvoicePage({ params }: { params: { id: string } }
               {s.patient_name && <div>Patient: {s.patient_name}</div>}
               {s.doctor_name && <div>Doctor: {s.doctor_name}</div>}
               {s.dc_no && <div>DC No: {s.dc_no}</div>}
+            </div>
+          )}
+          {customFieldRows.length > 0 && (
+            <div className="text-sm text-gray-600 space-y-0.5">
+              {customFieldRows.map(([key, value]) => (
+                <div key={key}>
+                  {prettifyFieldLabel(key)}: {String(value)}
+                </div>
+              ))}
             </div>
           )}
           <p className="text-sm text-gray-600">

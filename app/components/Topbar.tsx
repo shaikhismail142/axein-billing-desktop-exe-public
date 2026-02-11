@@ -3,13 +3,14 @@
 import { usePathname } from 'next/navigation';
 
 function pageTitle(pathname: string | null) {
-  if (!pathname || pathname === '/') return 'Dashboard';
+  if (!pathname || pathname === '/') return 'Dashboard & Reports';
   const map = [
+    { prefix: '/dashboard', label: 'Dashboard & Reports' },
     { prefix: '/products', label: 'Products' },
     { prefix: '/quotations', label: 'Quotations' },
     { prefix: '/invoices', label: 'Invoices' },
     { prefix: '/inventory', label: 'Inventory' },
-    { prefix: '/reports', label: 'Reports' },
+    { prefix: '/reports', label: 'Dashboard & Reports' },
     { prefix: '/accounting', label: 'Accounting' },
     { prefix: '/settings', label: 'Settings' },
     { prefix: '/billing', label: 'Quick Billing' },

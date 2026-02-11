@@ -26,6 +26,7 @@ type Sale = {
   patient_name?: string | null;
   doctor_name?: string | null;
   dc_no?: string | null;
+  custom_fields?: Record<string, unknown> | null;
 };
 
 type Item = {
@@ -168,6 +169,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
             (s.meta->>'patient_name') AS patient_name,
             (s.meta->>'doctor_name')  AS doctor_name,
             (s.meta->>'dc_no')        AS dc_no,
+            (s.meta->'custom_fields') AS custom_fields,
             c.name AS customer_name
        FROM sales s
        LEFT JOIN customers c ON c.id = s.customer_id
@@ -220,6 +222,24 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     sale.pending_amount ?? Math.max(0, toNum(sale.total, 0) - amountPaid),
     Math.max(0, toNum(sale.total, 0) - amountPaid)
   );
+  const customFieldLines = Object.entries(
+    (sale.custom_fields && typeof sale.custom_fields === "object"
+      ? sale.custom_fields
+      : {}) as Record<string, unknown>
+  )
+    .filter(([key, value]) => {
+      const k = String(key || "").toLowerCase();
+      if (k === "patient_name" || k === "doctor_name" || k === "dc_no") return false;
+      return value != null && String(value).trim() !== "";
+    })
+    .map(
+      ([key, value]) =>
+        `${key
+          .replace(/[_-]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .replace(/\b\w/g, (m) => m.toUpperCase())}: ${String(value)}`
+    );
 
   // ---- PDF setup ----
   const doc = new PDFDocument({ size: "A4", margin: MARGIN, bufferPages: true });
@@ -585,6 +605,20 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     doc.font("Helvetica-Bold").fontSize(FS_BASE).text("Notes", MARGIN, notesTop);
     doc.font("Helvetica").fillColor("#333").fontSize(FS_BASE)
       .text(String(notesText), MARGIN, doc.y + 6, { width: contentW });
+    doc.fillColor("#000");
+    contentBottom = doc.y;
+  }
+
+  if (customFieldLines.length > 0) {
+    const customTop = contentBottom + 10;
+    if (customTop + 50 > pageH - MARGIN - (SIG_H + GAP_SIG_QUOTE + QUOTE_H + FOOTER_H + 24)) {
+      doc.addPage();
+      renderPageHeader();
+      contentBottom = doc.y + HEADER_GAP;
+    }
+    doc.font("Helvetica-Bold").fontSize(FS_BASE).text("Additional Fields", MARGIN, customTop);
+    doc.font("Helvetica").fillColor("#333").fontSize(FS_BASE)
+      .text(customFieldLines.join("\n"), MARGIN, doc.y + 6, { width: contentW });
     doc.fillColor("#000");
     contentBottom = doc.y;
   }
