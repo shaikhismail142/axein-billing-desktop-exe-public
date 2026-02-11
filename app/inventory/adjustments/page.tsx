@@ -91,7 +91,6 @@ export default function InventoryAdjustmentsPage() {
   const [items, setItems] = useState<AdjRow[]>([]);
   const [page, setPage] = useState(1);
   const [perPage] = useState(10);
-  const [totalPages, setTotalPages] = useState(1);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"" | "draft" | "posted" | "reversed">("");
   const [from, setFrom] = useState<string>("");
@@ -121,7 +120,6 @@ export default function InventoryAdjustmentsPage() {
     if (to) params.set("to", new Date(to).toISOString());
     const d = await api<{items: AdjRow[]; totalPages: number}>(`/api/inventory/adjustments?${params}`);
     setItems(d.items || []);
-    setTotalPages(d.totalPages || 1);
   }
 
   useEffect(() => {

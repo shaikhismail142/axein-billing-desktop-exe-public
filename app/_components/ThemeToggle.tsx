@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTheme } from "@/app/providers/ThemeProvider"; // <-- use YOUR provider
 
 export default function ThemeToggle() {
-  const { resolvedTheme, toggle, setTheme, mode } = useTheme();
+  const { resolvedTheme, toggle, mode } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -27,7 +27,7 @@ export default function ThemeToggle() {
 
       {/* Optional tiny menu: click+hold to pick explicit mode */}
       <div className="sr-only">Current mode: {mode}</div>
-      {/* If you want a 3-way menu later: Light / Dark / System, call setTheme('light'|'dark'|'system') */}
+      {/* If you want a 3-way menu later: Light / Dark / System, expose setTheme in this component. */}
     </div>
   );
 }

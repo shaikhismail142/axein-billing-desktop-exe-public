@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
 import { getRequestBusinessId } from "@/app/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 /* =========================
    GET /api/products
@@ -10,8 +11,22 @@ import { getRequestBusinessId } from "@/app/lib/platform-context";
    NOTE: derives price/stock/low/sku from meta only (no hard deps on flat cols)
 ========================= */
 export async function GET(req: Request) {
+  const access = await requireAnyPermission(
+    req,
+    [
+      "perm.products.manage",
+      "perm.inventory.manage",
+      "perm.sales.manage",
+      "perm.purchases.manage",
+      "perm.quotations.manage",
+      "perm.reports.view",
+    ],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const url = new URL(req.url);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
   const perPage = Math.min(200, Math.max(1, Number(url.searchParams.get("perPage") || 20)));
   const q = (url.searchParams.get("q") || "").trim();
@@ -296,8 +311,15 @@ export async function GET(req: Request) {
 ========================= */
 export async function POST(req: Request) {
   try {
+    const access = await requireAnyPermission(
+      req,
+      ["perm.products.manage", "perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
+      "Forbidden"
+    );
+    if ("response" in access) return access.response;
+
     const payload = await req.json().catch(() => ({} as any));
-    const businessId = getRequestBusinessId(req, 1);
+    const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
 
     const name = String(payload.name ?? "").trim();
     if (!name) {

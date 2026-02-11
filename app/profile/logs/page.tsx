@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type LogRow = {
   id: number;
@@ -17,7 +17,7 @@ export default function ProfileLogsPage() {
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState<string>("");
 
-  async function load() {
+  const load = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
@@ -32,11 +32,11 @@ export default function ProfileLogsPage() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [level]);
 
   useEffect(() => {
     load();
-  }, [level]);
+  }, [load]);
 
   async function downloadWithAdmin(url: string, fallbackName: string) {
     setBusy(true);

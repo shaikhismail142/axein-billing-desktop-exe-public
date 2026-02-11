@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/app/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 async function hasBusinessColumn() {
   try {
@@ -24,8 +25,15 @@ async function hasBusinessColumn() {
 /** GET /api/customers?q=...   → { items: [{id,name,phone,gstin,address}] } */
 export async function GET(req: Request) {
   try {
+    const access = await requireAnyPermission(
+      req,
+      ["perm.customers.manage", "perm.sales.manage", "perm.quotations.manage", "perm.payments.manage"],
+      "Forbidden"
+    );
+    if ("response" in access) return access.response;
+
     const url = new URL(req.url);
-    const businessId = getRequestBusinessId(req, 1);
+    const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
     const scoped = await hasBusinessColumn();
     const q = (url.searchParams.get("q") || "").trim();
     const limit = Math.min(50, Number(url.searchParams.get("limit") || 20));
@@ -63,8 +71,15 @@ export async function GET(req: Request) {
 /** Optional: create a quick customer if needed */
 export async function POST(req: Request) {
   try {
+    const access = await requireAnyPermission(
+      req,
+      ["perm.customers.manage", "perm.sales.manage", "perm.quotations.manage", "perm.payments.manage"],
+      "Forbidden"
+    );
+    if ("response" in access) return access.response;
+
     const body = await req.json();
-    const businessId = getRequestBusinessId(req, 1);
+    const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
     const scoped = await hasBusinessColumn();
     if (!body?.name || typeof body.name !== "string") {
       return NextResponse.json({ error: "name is required" }, { status: 400 });

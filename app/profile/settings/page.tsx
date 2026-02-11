@@ -519,18 +519,20 @@ export default function SettingsPage() {
                       style={{ minHeight: 80, minWidth: 180 }}
                     >
                       {/* Using <img> deliberately so the same URL works in server-side PDF rendering */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       {!logoPreviewError ? (
-                        <img
-                          src={previewSrc}
-                          alt="Company Logo"
-                          onError={() => setLogoPreviewError(true)}
-                          style={{
-                            maxHeight: 64, // preview; PDF will use ~48px max
-                            maxWidth: 260,
-                            objectFit: 'contain',
-                          }}
-                        />
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={previewSrc}
+                            alt="Company Logo"
+                            onError={() => setLogoPreviewError(true)}
+                            style={{
+                              maxHeight: 64, // preview; PDF will use ~48px max
+                              maxWidth: 260,
+                              objectFit: 'contain',
+                            }}
+                          />
+                        </>
                       ) : (
                         <div className="text-xs muted">Preview unavailable. Check the logo URL.</div>
                       )}

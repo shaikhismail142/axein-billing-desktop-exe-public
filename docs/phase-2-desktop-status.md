@@ -41,13 +41,16 @@
 29. Added DB migration `20260213_add_computer_limits.sql` and compatibility fallbacks for environments that have not yet applied the migration.
 30. Removed archived legacy Docker/bootstrap assets and stale installer/license artifacts from the EXE repository tree.
 31. Hardened desktop migration runner with Postgres connection fallbacks and persistent migration history tracking (`schema_migrations`) so reruns are idempotent on existing customer databases.
+32. Added explicit RBAC gates to core customers/products/invoices APIs with LAN-aware access context fallback for business scoping.
+33. Removed stale desktop artifacts from runtime source tree (`app/components/ThemeToggle.tsx` unused wrapper and tracked `.DS_Store`).
+34. Cleared the lint warning backlog and revalidated desktop build/smoke/selftest on the updated codebase.
 
 ## Pending (Next phase)
 1. Run Tauri native build on Windows build machine and produce signed NSIS installer artifacts.
 2. Validate installer upgrade/uninstall flows on clean Windows 10 and Windows 11 machines.
 3. Implement local DB bootstrap service packaging strategy (embedded Postgres distribution path).
 4. Add LAN host/client pairing UX and secure transport setup.
-5. Harden RBAC enforcement in every API route (current foundation is partial).
+5. Continue RBAC hardening in remaining legacy API routes until full route-level permission coverage is complete.
 
 ## Notes
 - Rust toolchain is now installed and preflight checks pass in local development.

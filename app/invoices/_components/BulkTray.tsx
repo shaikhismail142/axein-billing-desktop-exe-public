@@ -14,6 +14,7 @@ import { useSelection } from "./selection";
  */
 
 const ALLOW_DELETE = true; // flip to false if you want to hide "Delete" for invoices
+const FILTER_KEYS_TO_KEEP = new Set(["q", "from", "to", "customerId", "sort", "dir"]);
 
 export default function BulkTray({ total }: { total: number }) {
   const { selectedIds, clear, allFiltered, setAllFiltered } = useSelection();
@@ -22,23 +23,12 @@ export default function BulkTray({ total }: { total: number }) {
 
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Filters you want to carry forward when exporting ALL filtered
-  const filterKeysToKeep = new Set([
-    "q",
-    "from",
-    "to",
-    "customerId",
-    "sort",
-    "dir",
-    // add more if needed in future
-  ]);
-
   // Build CSV export href for INVOICES
   const csvHref = useMemo(() => {
     if (allFiltered) {
       const params = new URLSearchParams();
       for (const [k, v] of Array.from(sp.entries())) {
-        if (filterKeysToKeep.has(k)) params.set(k, v);
+        if (FILTER_KEYS_TO_KEEP.has(k)) params.set(k, v);
       }
       return `/api/invoices/export${params.size ? `?${params.toString()}` : ""}`;
     }
@@ -77,7 +67,7 @@ export default function BulkTray({ total }: { total: number }) {
         ? {
             all: true,
             ...Object.fromEntries(
-              Array.from(sp.entries()).filter(([k]) => filterKeysToKeep.has(k))
+              Array.from(sp.entries()).filter(([k]) => FILTER_KEYS_TO_KEEP.has(k))
             ),
           }
         : { ids: selectedIds };

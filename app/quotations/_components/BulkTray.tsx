@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSelection } from "./selection";
 
 const ALLOW_DELETE = true;
+const FILTER_KEYS_TO_KEEP = new Set(["q", "page", "perPage"]);
 
 export default function BulkTray({ total }: { total: number }) {
   const { selectedIds, clear, allFiltered, setAllFiltered } = useSelection();
@@ -12,13 +13,11 @@ export default function BulkTray({ total }: { total: number }) {
   const sp = useSearchParams();
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const filterKeysToKeep = new Set(["q", "page", "perPage"]);
-
   const csvHref = useMemo(() => {
     if (allFiltered) {
       const params = new URLSearchParams();
       for (const [k, v] of Array.from(sp.entries())) {
-        if (filterKeysToKeep.has(k)) params.set(k, v);
+        if (FILTER_KEYS_TO_KEEP.has(k)) params.set(k, v);
       }
       params.delete("page");
       return `/api/quotations/export${params.size ? `?${params.toString()}` : ""}`;
@@ -45,7 +44,7 @@ export default function BulkTray({ total }: { total: number }) {
         ? {
             all: true,
             ...Object.fromEntries(
-              Array.from(sp.entries()).filter(([k]) => filterKeysToKeep.has(k))
+              Array.from(sp.entries()).filter(([k]) => FILTER_KEYS_TO_KEEP.has(k))
             ),
           }
         : { ids: selectedIds };

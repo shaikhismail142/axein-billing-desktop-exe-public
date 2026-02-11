@@ -42,13 +42,6 @@ type PageParams = {
 };
 
 /* ---------- Utils ---------- */
-const inr = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
 function parseIntSafe(v: unknown, def: number) {
   const n = Number(v);
   return Number.isFinite(n) ? n : def;
@@ -62,9 +55,6 @@ function buildBaseUrl() {
   const proto = hdrs.get("x-forwarded-proto") ?? "http";
   if (!host) return "";
   return `${proto}://${host}`;
-}
-function nextDir(current: "asc" | "desc") {
-  return current === "asc" ? "desc" : "asc";
 }
 function materialFromSku(sku?: string | null) {
   if (!sku) return null;
@@ -137,32 +127,6 @@ async function fetchCategories(): Promise<string[]> {
   } catch {
     return [];
   }
-}
-
-/* ---------- Small server components ---------- */
-function SortableTh({
-  label,
-  active,
-  dir,
-  href,
-}: {
-  label: string;
-  active: boolean;
-  dir: "asc" | "desc";
-  href: string;
-}) {
-  return (
-    <th className="px-3 py-2 text-left">
-      <Link
-        href={href}
-        className={`inline-flex items-center gap-1 ${active ? "font-semibold" : ""}`}
-        title={`Sort by ${label}`}
-      >
-        {label}
-        {active && <span className="text-xs opacity-70">{dir === "asc" ? "▲" : "▼"}</span>}
-      </Link>
-    </th>
-  );
 }
 
 function PerPagePicker({ qs, value }: { qs: URLSearchParams; value: number }) {
@@ -241,19 +205,6 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pag
   const makeURL = (p: number) => {
     const sp = new URLSearchParams(baseQS.toString());
     sp.set("page", String(p));
-    return `/products?${sp.toString()}`;
-  };
-
-  // sort header links
-  const sortHref = (key: "id" | "name" | "sku" | "price" | "stock") => {
-    const sp = new URLSearchParams(baseQS.toString());
-    if (sort === key) {
-      sp.set("dir", nextDir(dir));
-    } else {
-      sp.set("sort", key);
-      sp.set("dir", "asc");
-    }
-    sp.set("page", "1");
     return `/products?${sp.toString()}`;
   };
 

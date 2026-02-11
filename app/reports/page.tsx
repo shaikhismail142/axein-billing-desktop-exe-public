@@ -58,16 +58,14 @@ export default function ReportsPage() {
   const [includeDraftPurchases, setIncludeDraftPurchases] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
 
-  // Keep deps simple & stable for theme recalculation
-  const depKey = typeof window !== 'undefined' ? document.documentElement.className : '';
-  const theme = useMemo(() => ({
+  const theme = {
     text: cssVar('--text', '#111827'),
     muted: cssVar('--muted', '#64748b'),
     primary: cssVar('--primary', '#3b82f6'),
     success: cssVar('--success', '#22c55e'),
     danger: cssVar('--danger', '#ef4444'),
     warning: cssVar('--warning', '#f59e0b'),
-  }), [depKey]);
+  };
 
   const loadAll = useCallback(async () => {
     setBusy(true);

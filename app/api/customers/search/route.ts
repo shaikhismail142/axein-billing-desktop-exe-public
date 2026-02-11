@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db"; // your pg Pool
 import { getRequestBusinessId } from "@/app/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(req: Request) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.customers.manage", "perm.sales.manage", "perm.quotations.manage", "perm.payments.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const { searchParams } = new URL(req.url);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const q = (searchParams.get("q") || "").trim();
   const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "10", 10), 1), 50);
 

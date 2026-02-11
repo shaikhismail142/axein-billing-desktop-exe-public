@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/lib/platform-context";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,8 +42,15 @@ function sortColumn(key: "date" | "invoice" | "customer" | "total") {
 }
 
 export async function GET(req: Request) {
+  const access = await requireAnyPermission(
+    req,
+    ["perm.sales.manage", "perm.payments.manage", "perm.reports.view", "perm.export.manage"],
+    "Forbidden"
+  );
+  if ("response" in access) return access.response;
+
   const url = new URL(req.url);
-  const businessId = getRequestBusinessId(req, 1);
+  const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const sp = Object.fromEntries(url.searchParams.entries()) as PageParams;
 
   const page    = Math.max(1, Number(sp.page ?? 1));

@@ -136,10 +136,6 @@ export default async function PrintInvoice({ params }: { params: { id: string } 
     )
   ).rows as any[];
 
-  const balanceDue = Number(
-    s.pending_amount ?? Math.max(Number(s.total || 0) - Number(s.amount_paid || 0), 0)
-  );
-
   const extraAmount = Number(s.extra_amount || 0);
 
   return (
@@ -202,7 +198,10 @@ export default async function PrintInvoice({ params }: { params: { id: string } 
             <div className="header-meta">
               {biz.logo_url && (
                 <div style={{ marginBottom: 6 }}>
-                  <img src={biz.logo_url} alt="Logo" style={{ height: 48, objectFit: "contain" }} />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={biz.logo_url} alt="Logo" style={{ height: 48, objectFit: "contain" }} />
+                  </>
                 </div>
               )}
               <div><b>No:</b> {s.invoice_no || id}</div>
@@ -294,7 +293,10 @@ export default async function PrintInvoice({ params }: { params: { id: string } 
             {(biz.signature_name || biz.signature_title || biz.signature_image_url) && (
               <div style={{ marginTop: 10, textAlign: "right" }}>
                 {biz.signature_image_url && (
-                  <img src={biz.signature_image_url} alt="Signature" style={{ height: 60, objectFit: "contain" }} />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={biz.signature_image_url} alt="Signature" style={{ height: 60, objectFit: "contain" }} />
+                  </>
                 )}
                 {biz.signature_name && <div><b>{biz.signature_name}</b></div>}
                 {biz.signature_title && <div className="muted">{biz.signature_title}</div>}

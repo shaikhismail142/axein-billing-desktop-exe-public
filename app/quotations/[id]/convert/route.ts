@@ -132,7 +132,7 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
 
     await client.query("COMMIT");
     return NextResponse.json({ sale_id: sale.id });
-  } catch (e) {
+  } catch {
     await client.query("ROLLBACK");
     return NextResponse.json({ error: "Failed to convert quotation" }, { status: 500 });
   } finally {

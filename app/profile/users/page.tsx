@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type PendingUser = {
   id: number;
@@ -75,7 +75,7 @@ export default function ProfileUsersPage() {
   const [selectedRoleId, setSelectedRoleId] = useState<number>(0);
   const [selectedRolePermCodes, setSelectedRolePermCodes] = useState<string[]>([]);
 
-  async function loadPendingUsers() {
+  const loadPendingUsers = useCallback(async () => {
     const res = await fetch("/api/admin/users/pending", { cache: "no-store" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Failed to load pending users");
@@ -87,17 +87,17 @@ export default function ProfileUsersPage() {
       defaults[item.id] = ROLE_OPTIONS.includes(fromMeta) ? fromMeta : "billing_staff";
     }
     setRoleByPendingUser(defaults);
-  }
+  }, []);
 
-  async function loadUsers() {
+  const loadUsers = useCallback(async () => {
     const res = await fetch("/api/admin/users", { cache: "no-store" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Failed to load users");
     setUsers(Array.isArray(data?.items) ? data.items : []);
     setSeatUsage(data?.seat_usage || null);
-  }
+  }, []);
 
-  async function loadRolesAndPermissions() {
+  const loadRolesAndPermissions = useCallback(async () => {
     const res = await fetch("/api/admin/rbac/roles", { cache: "no-store" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Failed to load role permissions");
@@ -108,19 +108,20 @@ export default function ProfileUsersPage() {
     setRoles(roleList);
     setPermissionCatalog(permissionList);
 
-    if (roleList.length > 0) {
+    if (roleList.length === 0) return;
+    setSelectedRoleId((prev) => {
       const nextRoleId =
-        roleList.some((r: RoleRow) => r.id === selectedRoleId) ? selectedRoleId : Number(roleList[0].id || 0);
-      setSelectedRoleId(nextRoleId);
+        roleList.some((r: RoleRow) => Number(r.id) === Number(prev)) ? Number(prev) : Number(roleList[0].id || 0);
       const role = roleList.find((r: RoleRow) => Number(r.id) === Number(nextRoleId));
       const perms = Array.isArray(role?.permissions)
         ? role.permissions.map((p: any) => String(p?.code || "")).filter(Boolean)
         : [];
       setSelectedRolePermCodes(Array.from(new Set(perms)));
-    }
-  }
+      return nextRoleId;
+    });
+  }, []);
 
-  async function refreshAll() {
+  const refreshAll = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
@@ -130,11 +131,11 @@ export default function ProfileUsersPage() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [loadPendingUsers, loadRolesAndPermissions, loadUsers]);
 
   useEffect(() => {
     refreshAll();
-  }, []);
+  }, [refreshAll]);
 
   const selectedRole = useMemo(
     () => roles.find((r) => Number(r.id) === Number(selectedRoleId)) || null,

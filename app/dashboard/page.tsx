@@ -92,17 +92,16 @@ export default function DashboardPage() {
   }, [fromISO, toISO]);
 
   // Derived stats for the range
-  const series = data?.daily ?? [];
-  const values = series.map((d) => Number(d.total || 0));
+  const series = useMemo(() => data?.daily ?? [], [data?.daily]);
+  const values = useMemo(() => series.map((d) => Number(d.total || 0)), [series]);
   const totalRange = values.reduce((a, b) => a + b, 0);
   const activeDays = values.filter((v) => v > 0).length;
   const bestIdx = values.length ? values.indexOf(Math.max(...values)) : -1;
   const bestLabel = bestIdx >= 0 ? `${fmtDateShort(series[bestIdx].day)} • ${fmtINR(values[bestIdx])}` : '—';
   const avgPerDay = values.length ? totalRange / values.length : 0;
 
-  // Theme colors (resolved from CSS vars) with stable dependency
-  const depKey = typeof window !== 'undefined' ? document.documentElement.className : '';
-  const theme = useMemo(() => ({
+  // Theme colors (resolved from CSS vars)
+  const theme = {
     text: cssVar('--text', '#111827'),
     muted: cssVar('--muted', '#64748b'),
     primary: cssVar('--primary', '#3b82f6'),
@@ -112,7 +111,7 @@ export default function DashboardPage() {
     thead: cssVar('--thead', 'rgba(241,245,249,0.92)'),
     popBg: cssVar('--popover-bg', 'rgba(17,24,39,0.85)'),
     popText: cssVar('--popover-text', '#fff'),
-  }), [depKey]);
+  };
 
   const chartData = useMemo(() => {
     const ma = movingAvg(values, 7);

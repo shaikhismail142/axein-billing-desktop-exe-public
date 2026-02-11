@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { useSelection } from "./selection";
 
 export function MasterCheckbox({ pageIds }: { pageIds: number[] }) {
-  const { selectedIds, selectPage, unselectPage, allFiltered, setAllFiltered } = useSelection();
+  const { selectedIds, selectPage, unselectPage, setAllFiltered } = useSelection();
   const pageAllSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
   const someSelected = pageIds.some((id) => selectedIds.includes(id));
   const ref = useRef<HTMLInputElement>(null);
