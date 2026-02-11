@@ -69,7 +69,7 @@ export async function POST(
     const roleRs = await client.query(
       `SELECT id, lower(code) AS code
          FROM roles
-        WHERE business_id = $1
+        WHERE (business_id = $1 OR business_id IS NULL)
           AND lower(code) = ANY($2::text[])`,
       [businessId, roleCodes]
     );
