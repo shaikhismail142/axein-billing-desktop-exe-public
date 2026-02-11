@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
 import { guardApiActivated } from "@/app/lib/activation-guard";
 import { adjustStock } from "@/app/lib/inventory/stock";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 type Body = {
   product_id: number | string;
@@ -23,6 +24,13 @@ export async function POST(req: Request) {
   // Allow during trial
   const guard = await guardApiActivated(true);
   if ("response" in guard) return guard.response;
+  const access = await requireAnyPermission(
+    req,
+    ["perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
+    "Forbidden"
+  );
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
 
   let body: Body;
   try {
@@ -48,6 +56,7 @@ export async function POST(req: Request) {
     const res = await adjustStock({
       client,
       productId: pid,
+      businessId,
       delta,
       reason,
       refType: body.ref_type ?? "adjustment",

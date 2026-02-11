@@ -6,20 +6,33 @@ export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { pool } from "../../../lib/db";
+import { pool } from "@/app/lib/db";
+import { guardApiActivated } from "@/app/lib/activation-guard";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 type ColMap = {
   table: string;
   id: string;
   product_id: string;
   batch_no?: string;
-  mfg_date?: string;   // date
-  exp_date?: string;   // date
-  qty?: string;        // numeric
-  cost_price?: string; // numeric
-  mrp?: string;        // numeric
+  mfg_date?: string;
+  exp_date?: string;
+  qty?: string;
+  cost_price?: string;
+  mrp?: string;
   supplier_id?: string;
+  business_id?: string;
 };
+
+async function getTableColumns(client: any, table: string): Promise<Set<string>> {
+  const rs = await client.query(
+    `SELECT lower(column_name) AS col
+       FROM information_schema.columns
+      WHERE table_schema='public' AND table_name=$1`,
+    [table]
+  );
+  return new Set<string>((rs.rows || []).map((r: any) => String(r.col)));
+}
 
 async function detectBatchesTableAndColumns(client: any): Promise<ColMap> {
   const tRes = await client.query(`
@@ -32,13 +45,7 @@ async function detectBatchesTableAndColumns(client: any): Promise<ColMap> {
   const table = (tRes.rows?.[0] as any)?.t || "";
   if (!table) throw new Error("No batches table found (expected product_batches or batches).");
 
-  const colsRes = await client.query(
-    `SELECT LOWER(column_name) AS col
-     FROM information_schema.columns
-     WHERE table_schema='public' AND table_name=$1`,
-    [table]
-  );
-  const cols = new Set<string>(colsRes.rows.map((r: any) => r.col));
+  const cols = await getTableColumns(client, table);
   const pick = (...candidates: string[]) => candidates.find((c) => cols.has(c));
 
   const id = pick("id") || "id";
@@ -50,8 +57,9 @@ async function detectBatchesTableAndColumns(client: any): Promise<ColMap> {
   const cost_price = pick("cost_price", "cost", "purchase_price", "base_cost");
   const mrp = pick("mrp", "retail_price", "sell_price", "selling_price", "price");
   const supplier_id = pick("supplier_id", "vendor_id");
+  const business_id = pick("business_id");
 
-  return { table, id, product_id, batch_no, mfg_date, exp_date, qty, cost_price, mrp, supplier_id };
+  return { table, id, product_id, batch_no, mfg_date, exp_date, qty, cost_price, mrp, supplier_id, business_id };
 }
 
 function isISODate(s: unknown) {
@@ -59,10 +67,20 @@ function isISODate(s: unknown) {
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  // Skip DB during builder stage
   if (process.env.BUILDING === "1") {
     return Response.json({ ok: true, note: "build-skip" });
   }
+
+  const g = await guardApiActivated(true);
+  if ("response" in g) return g.response;
+
+  const access = await requireAnyPermission(
+    req,
+    ["perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
+    "Forbidden"
+  );
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
 
   const id = params.id;
   if (!id) return Response.json({ ok: false, error: "Missing id" }, { status: 400 });
@@ -81,6 +99,33 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try {
     const map = await detectBatchesTableAndColumns(client);
     const t = map.table;
+    const hasBatchBusiness = !!map.business_id;
+
+    const productCols = await getTableColumns(client, "products").catch(() => new Set<string>());
+    const hasProductsBusiness = productCols.has("business_id");
+
+    const accessParams: any[] = [id];
+    let accessSql = `
+      SELECT 1
+        FROM ${t} b
+        JOIN products p
+          ON p.id = b.${map.product_id}${
+            hasProductsBusiness && hasBatchBusiness ? ` AND p.business_id = b.${map.business_id}` : ""
+          }
+       WHERE b.${map.id} = $1`;
+    if (hasBatchBusiness) {
+      accessParams.push(businessId);
+      accessSql += ` AND b.${map.business_id} = $${accessParams.length}`;
+    }
+    if (hasProductsBusiness) {
+      accessParams.push(businessId);
+      accessSql += ` AND p.business_id = $${accessParams.length}`;
+    }
+
+    const allowed = await client.query(accessSql, accessParams);
+    if (!allowed.rowCount) {
+      return Response.json({ ok: false, error: "Not found" }, { status: 404 });
+    }
 
     const sets: string[] = [];
     const paramsArr: any[] = [];
@@ -107,12 +152,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return Response.json({ ok: false, error: "Nothing to update" }, { status: 400 });
     }
 
-    // WHERE id
     paramsArr.push(id);
+    let where = `${map.id} = $${i}`;
+    i++;
+    if (hasBatchBusiness) {
+      paramsArr.push(businessId);
+      where += ` AND ${map.business_id} = $${i}`;
+      i++;
+    } else if (hasProductsBusiness) {
+      paramsArr.push(businessId);
+      where += ` AND ${map.product_id} IN (SELECT id FROM products WHERE business_id = $${i})`;
+      i++;
+    }
 
-    await client.query(`UPDATE ${t} SET ${sets.join(", ")} WHERE ${map.id} = $${i}`, paramsArr);
+    await client.query(`UPDATE ${t} SET ${sets.join(", ")} WHERE ${where}`, paramsArr);
 
-    // Return updated row (shape matches /api/batches GET)
     const sel = [
       `b.${map.id} AS id`,
       `b.${map.product_id} AS product_id`,
@@ -128,12 +182,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       map.exp_date ? `(b.${map.exp_date} - CURRENT_DATE) AS days_left` : `NULL::int AS days_left`,
     ].join(",\n        ");
 
+    const selParams: any[] = [id];
+    let selWhere = `b.${map.id} = $1`;
+    if (hasBatchBusiness) {
+      selParams.push(businessId);
+      selWhere += ` AND b.${map.business_id} = $${selParams.length}`;
+    }
+    if (hasProductsBusiness) {
+      selParams.push(businessId);
+      selWhere += ` AND p.business_id = $${selParams.length}`;
+    }
+
     const { rows } = await client.query(
       `SELECT ${sel}
        FROM ${t} b
-       JOIN products p ON p.id = b.${map.product_id}
-       WHERE b.${map.id} = $1`,
-      [id]
+       JOIN products p ON p.id = b.${map.product_id}${
+         hasProductsBusiness && hasBatchBusiness ? ` AND p.business_id = b.${map.business_id}` : ""
+       }
+       WHERE ${selWhere}`,
+      selParams
     );
 
     return Response.json({ ok: true, item: rows?.[0] ?? null });

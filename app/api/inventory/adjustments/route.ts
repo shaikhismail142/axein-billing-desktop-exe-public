@@ -5,11 +5,18 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
 import { guardApiActivated } from "@/app/lib/activation-guard";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 /** ------------ Types for payload ------------ */
 type ReasonLiteral =
-  | "adjustment" | "sale" | "return" | "purchase"
-  | "damage" | "loss" | "promo" | "correction";
+  | "adjustment"
+  | "sale"
+  | "return"
+  | "purchase"
+  | "damage"
+  | "loss"
+  | "promo"
+  | "correction";
 
 type NewItem = {
   product_id: number | string;
@@ -38,30 +45,54 @@ function parseDateOrNull(v: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+async function getTableColumns(client: any, table: string): Promise<Set<string>> {
+  const rs = await client.query(
+    `SELECT lower(column_name) AS col
+       FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1`,
+    [table]
+  );
+  return new Set<string>((rs.rows || []).map((r: any) => String(r.col)));
+}
+
 /** ============================================
  *  GET /api/inventory/adjustments
  *  Query: ?page=&perPage=&q=&status=&from=&to=
- *  Returns: { items, total, page, perPage, totalPages }
- *  NOTE: derives `lines` using COUNT(*) on items (no JSON ops)
  * ============================================ */
 export async function GET(req: Request) {
   const g = await guardApiActivated(true);
   if ("response" in g) return g.response;
+
+  const access = await requireAnyPermission(
+    req,
+    ["perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
+    "Forbidden"
+  );
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
 
   const url = new URL(req.url);
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
   const perPage = Math.min(200, Math.max(1, Number(url.searchParams.get("perPage") || 20)));
   const q = (url.searchParams.get("q") || "").trim();
   const status = (url.searchParams.get("status") || "").trim().toLowerCase();
-  const fromRaw = url.searchParams.get("from");
-  const toRaw = url.searchParams.get("to");
+  const from = parseDateOrNull(url.searchParams.get("from"));
+  const to = parseDateOrNull(url.searchParams.get("to"));
 
-  const from = parseDateOrNull(fromRaw ? new Date(fromRaw).toISOString() : null);
-  const to = parseDateOrNull(toRaw ? new Date(toRaw).toISOString() : null);
+  const [aCols, iCols] = await Promise.all([
+    getTableColumns(pool, "inventory_adjustments"),
+    getTableColumns(pool, "inventory_adjustment_items"),
+  ]);
+  const hasAdjustBusiness = aCols.has("business_id");
+  const hasItemsBusiness = iCols.has("business_id");
 
-  // Build WHERE
   const where: string[] = [];
   const params: any[] = [];
+
+  if (hasAdjustBusiness) {
+    params.push(businessId);
+    where.push(`ia.business_id = $${params.length}`);
+  }
 
   if (q) {
     params.push(`%${q}%`);
@@ -85,7 +116,6 @@ export async function GET(req: Request) {
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  // Count
   const { rows: cnt } = await pool.query(
     `SELECT COUNT(*)::int AS cnt
        FROM inventory_adjustments ia
@@ -96,8 +126,8 @@ export async function GET(req: Request) {
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const offset = (page - 1) * perPage;
 
-  // Page data — JSON-free line count
   const pageParams = [...params, perPage, offset];
+  const linesBusinessJoin = hasItemsBusiness && hasAdjustBusiness ? " AND i.business_id = ia.business_id" : "";
   const list = await pool.query(
     `
     SELECT
@@ -112,7 +142,7 @@ export async function GET(req: Request) {
       (
         SELECT COUNT(*)::int
         FROM inventory_adjustment_items i
-        WHERE i.adjustment_id = ia.id
+        WHERE i.adjustment_id = ia.id${linesBusinessJoin}
       ) AS lines
     FROM inventory_adjustments ia
     ${whereSql}
@@ -133,13 +163,19 @@ export async function GET(req: Request) {
 
 /** ============================================
  *  POST /api/inventory/adjustments
- *  Body: { reason?, reference?, notes?, items: [{product_id, delta_qty, unit_cost?, notes?}, ...] }
  *  Creates a DRAFT header + lines (no stock change yet).
- *  Returns: { ok, id }
  * ============================================ */
 export async function POST(req: Request) {
   const g = await guardApiActivated(true);
   if ("response" in g) return g.response;
+
+  const access = await requireAnyPermission(
+    req,
+    ["perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
+    "Forbidden"
+  );
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
 
   let body: NewAdjustmentBody;
   try {
@@ -153,9 +189,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "At least one item is required" }, { status: 400 });
   }
 
-  // Normalize reason -> one of our literals; fallback 'adjustment'
   const allowed: ReasonLiteral[] = [
-    "adjustment","sale","return","purchase","damage","loss","promo","correction"
+    "adjustment",
+    "sale",
+    "return",
+    "purchase",
+    "damage",
+    "loss",
+    "promo",
+    "correction",
   ];
   const rawReason = String(body.reason ?? "adjustment").toLowerCase();
   const reason: ReasonLiteral = (allowed as string[]).includes(rawReason)
@@ -165,8 +207,7 @@ export async function POST(req: Request) {
   const reference = nstr(body.reference);
   const notes = nstr(body.notes);
 
-  // Validate/normalize lines
-  type Line = { product_id: number; delta_qty: number; unit_cost: number | null; notes: string | null; };
+  type Line = { product_id: number; delta_qty: number; unit_cost: number | null; notes: string | null };
   const lines: Line[] = [];
 
   for (const it of items) {
@@ -193,40 +234,84 @@ export async function POST(req: Request) {
   try {
     await client.query("BEGIN");
 
-    // Insert header (explicit casts prevent Postgres type inference errors)
+    const [aCols, iCols, pCols] = await Promise.all([
+      getTableColumns(client, "inventory_adjustments"),
+      getTableColumns(client, "inventory_adjustment_items"),
+      getTableColumns(client, "products").catch(() => new Set<string>()),
+    ]);
+    const hasAdjustBusiness = aCols.has("business_id");
+    const hasItemsBusiness = iCols.has("business_id");
+    const hasProductsBusiness = pCols.has("business_id");
+
+    const productIds = Array.from(new Set(lines.map((it) => String(it.product_id))));
+    const found = await client.query(
+      `SELECT id::text
+         FROM products
+        WHERE id::text = ANY($1::text[])${hasProductsBusiness ? " AND business_id = $2" : ""}`,
+      hasProductsBusiness ? [productIds, businessId] : [productIds]
+    );
+    const foundSet = new Set<string>((found.rows || []).map((r: any) => String(r.id)));
+    const missing = productIds.filter((pid) => !foundSet.has(pid));
+    if (missing.length) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { ok: false, error: `Unknown product_id(s): ${missing.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    const headCols = [
+      ...(hasAdjustBusiness ? ["business_id"] : []),
+      "adjustment_date",
+      "status",
+      "reason",
+      "reference",
+      "notes",
+      "meta",
+    ];
+    const headVals = [
+      ...(hasAdjustBusiness ? [businessId] : []),
+      new Date().toISOString(),
+      "draft",
+      reason,
+      reference,
+      notes,
+    ];
+    const headPh = headVals.map((_, idx) => `$${idx + 1}`);
+
     const headIns = await client.query(
-      `INSERT INTO inventory_adjustments
-         (adjustment_date, status, reason, reference, notes, meta)
-       VALUES (now(), 'draft', $1::text, $2::text, $3::text, '{}'::jsonb)
+      `INSERT INTO inventory_adjustments (${headCols.join(", ")})
+       VALUES (${headPh.join(", ")}, '{}'::jsonb)
        RETURNING id`,
-      [reason, reference, notes]
+      headVals
     );
     const id = Number(headIns.rows[0].id);
 
-    // Insert lines (cast numeric/text so NULLs are well-typed)
-    const values: any[] = [];
-    const chunks: string[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      const ln = lines[i];
-      const base = i * 5;
-      //                  $1               $2                 $3        $4         $5
-      chunks.push(`($${base + 1}, $${base + 2}, $${base + 3}::numeric, $${base + 4}::numeric, $${base + 5}::text, '{}'::jsonb)`);
-      values.push(
-        id,                 // adjustment_id
-        ln.product_id,      // product_id
-        ln.delta_qty,       // delta_qty (numeric)
-        ln.unit_cost,       // unit_cost (numeric or null)
-        ln.notes            // notes (text or null)
+    for (const ln of lines) {
+      const cols = [
+        ...(hasItemsBusiness ? ["business_id"] : []),
+        "adjustment_id",
+        "product_id",
+        "delta_qty",
+        "unit_cost",
+        "notes",
+        "meta",
+      ];
+      const vals = [
+        ...(hasItemsBusiness ? [businessId] : []),
+        id,
+        ln.product_id,
+        ln.delta_qty,
+        ln.unit_cost,
+        ln.notes,
+      ];
+      const ph = vals.map((_, idx) => `$${idx + 1}`);
+      await client.query(
+        `INSERT INTO inventory_adjustment_items (${cols.join(", ")}) VALUES (${ph.join(", ")}, '{}'::jsonb)`,
+        vals
       );
     }
-    await client.query(
-      `INSERT INTO inventory_adjustment_items
-         (adjustment_id, product_id, delta_qty, unit_cost, notes, meta)
-       VALUES ${chunks.join(", ")}`,
-      values
-    );
 
-    // Optional: summary in meta (safe; list does not depend on it)
     await client.query(
       `UPDATE inventory_adjustments
           SET meta = jsonb_set(
@@ -235,18 +320,18 @@ export async function POST(req: Request) {
             jsonb_build_object('lines', $2::int, 'net_delta', $3::numeric)::jsonb,
             true
           )
-        WHERE id = $1`,
-      [
-        id,
-        lines.length,
-        lines.reduce((a, b) => a + Number(b.delta_qty || 0), 0)
-      ]
+        WHERE id = $1${hasAdjustBusiness ? " AND business_id = $4" : ""}`,
+      hasAdjustBusiness
+        ? [id, lines.length, lines.reduce((a, b) => a + Number(b.delta_qty || 0), 0), businessId]
+        : [id, lines.length, lines.reduce((a, b) => a + Number(b.delta_qty || 0), 0)]
     );
 
     await client.query("COMMIT");
     return NextResponse.json({ ok: true, id }, { status: 201 });
   } catch (e: any) {
-    try { await client.query("ROLLBACK"); } catch {}
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
     return NextResponse.json({ ok: false, error: e?.message || "Create failed" }, { status: 500 });
   } finally {
     client.release();

@@ -1,29 +1,40 @@
 // app/api/batches/route.ts
 
-// Make sure this route never prerenders at build time
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { pool } from "../../lib/db";
+import { pool } from "@/app/lib/db";
+import { guardApiActivated } from "@/app/lib/activation-guard";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 type ColMap = {
   table: string;
   id: string;
   product_id: string;
   batch_no?: string;
-  mfg_date?: string;   // date
-  exp_date?: string;   // date
-  qty?: string;        // numeric
-  cost_price?: string; // numeric
-  mrp?: string;        // numeric
+  mfg_date?: string;
+  exp_date?: string;
+  qty?: string;
+  cost_price?: string;
+  mrp?: string;
   supplier_id?: string;
+  business_id?: string;
 };
 
+async function getTableColumns(client: any, table: string): Promise<Set<string>> {
+  const r = await client.query(
+    `SELECT LOWER(column_name) AS col
+       FROM information_schema.columns
+      WHERE table_schema='public' AND table_name=$1`,
+    [table]
+  );
+  return new Set<string>((r.rows || []).map((x: any) => String(x.col)));
+}
+
 async function detectBatchesTableAndColumns(client: any): Promise<ColMap> {
-  // 1) which table?
   const tRes = await client.query(`
     SELECT COALESCE(
       (SELECT 'product_batches' WHERE to_regclass('public.product_batches') IS NOT NULL),
@@ -34,16 +45,7 @@ async function detectBatchesTableAndColumns(client: any): Promise<ColMap> {
   const table = (tRes.rows?.[0] as any)?.t || "";
   if (!table) throw new Error("No batches table found (expected product_batches or batches).");
 
-  // 2) what columns exist?
-  const colsRes = await client.query(
-    `SELECT LOWER(column_name) AS col
-     FROM information_schema.columns
-     WHERE table_schema='public' AND table_name=$1`,
-    [table]
-  );
-  const cols = new Set<string>(colsRes.rows.map((r: any) => r.col));
-
-  // helper to pick first matching name
+  const cols = await getTableColumns(client, table);
   const pick = (...candidates: string[]) => candidates.find((c) => cols.has(c));
 
   const id = pick("id") || "id";
@@ -55,6 +57,7 @@ async function detectBatchesTableAndColumns(client: any): Promise<ColMap> {
   const cost_price = pick("cost_price", "cost", "purchase_price", "base_cost");
   const mrp = pick("mrp", "retail_price", "sell_price", "selling_price", "price");
   const supplier_id = pick("supplier_id", "vendor_id");
+  const business_id = pick("business_id");
 
   return {
     table,
@@ -67,11 +70,11 @@ async function detectBatchesTableAndColumns(client: any): Promise<ColMap> {
     cost_price,
     mrp,
     supplier_id,
+    business_id,
   };
 }
 
 export async function GET(req: NextRequest) {
-  // Skip DB during builder stage
   if (process.env.BUILDING === "1") {
     return Response.json({
       ok: true,
@@ -85,6 +88,17 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  const g = await guardApiActivated(true);
+  if ("response" in g) return g.response;
+
+  const access = await requireAnyPermission(
+    req,
+    ["perm.inventory.manage", "perm.purchases.manage", "perm.sales.manage"],
+    "Forbidden"
+  );
+  if (!access.ok) return access.response;
+  const businessId = access.ctx.businessId;
+
   const client = await pool.connect();
   try {
     const { searchParams } = new URL(req.url);
@@ -95,26 +109,54 @@ export async function GET(req: NextRequest) {
     const q = (searchParams.get("q") || "").trim();
     const productId = (searchParams.get("productId") || "").trim();
     const onlyQty = (searchParams.get("onlyQty") || "true") === "true";
-    const expiry = (searchParams.get("expiry") || "all").toLowerCase(); // all|near|expired
+    const expiry = (searchParams.get("expiry") || "all").toLowerCase();
 
-    // prefs
-    const prefRes = await client.query(`
-      WITH s AS (
-        SELECT (value_json->>'near_expiry_days')::int AS near_expiry_days
-        FROM settings WHERE key = 'inventory_prefs'
-      )
-      SELECT COALESCE((SELECT near_expiry_days FROM s), 60) AS near_expiry_days
-    `);
+    const settingsCols = await getTableColumns(client, "settings").catch(() => new Set<string>());
+    const hasSettingsBusiness = settingsCols.has("business_id");
+    let prefRes = await client.query(
+      `WITH s AS (
+         SELECT (value_json->>'near_expiry_days')::int AS near_expiry_days
+           FROM settings
+          WHERE key = 'inventory_prefs'${hasSettingsBusiness ? " AND business_id = $1" : ""}
+          ORDER BY id DESC
+          LIMIT 1
+       )
+       SELECT COALESCE((SELECT near_expiry_days FROM s), 60) AS near_expiry_days`,
+      hasSettingsBusiness ? [businessId] : []
+    );
+    if (!prefRes.rowCount && hasSettingsBusiness) {
+      prefRes = await client.query(
+        `WITH s AS (
+           SELECT (value_json->>'near_expiry_days')::int AS near_expiry_days
+             FROM settings
+            WHERE key = 'inventory_prefs'
+            ORDER BY id DESC
+            LIMIT 1
+         )
+         SELECT COALESCE((SELECT near_expiry_days FROM s), 60) AS near_expiry_days`
+      );
+    }
     const nearDays = Number((prefRes.rows?.[0] as any)?.near_expiry_days ?? 60);
 
-    // table + columns
     const map = await detectBatchesTableAndColumns(client);
     const t = map.table;
 
-    // Build WHERE with only existing columns
+    const productCols = await getTableColumns(client, "products").catch(() => new Set<string>());
+    const hasProductsBusiness = productCols.has("business_id");
+    const hasBatchBusiness = !!map.business_id;
+
     const where: string[] = [];
     const params: any[] = [];
     let i = 1;
+
+    if (hasBatchBusiness) {
+      where.push(`b.${map.business_id} = $${i++}`);
+      params.push(businessId);
+    }
+    if (hasProductsBusiness) {
+      where.push(`p.business_id = $${i++}`);
+      params.push(businessId);
+    }
 
     if (q) {
       const nameLike = `(LOWER(p.name) LIKE LOWER($${i}))`;
@@ -140,17 +182,19 @@ export async function GET(req: NextRequest) {
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    // Count
+    const joinProducts = `JOIN products p ON p.id = b.${map.product_id}${
+      hasProductsBusiness && hasBatchBusiness ? ` AND p.business_id = b.${map.business_id}` : ""
+    }`;
+
     const countRes = await client.query(
       `SELECT COUNT(*)::text AS count
        FROM ${t} b
-       JOIN products p ON p.id = b.${map.product_id}
+       ${joinProducts}
        ${whereSql}`,
       params
     );
     const total = parseInt(((countRes.rows?.[0] as any)?.count || "0") as string, 10);
 
-    // SELECT list with graceful fallbacks
     const sel = [
       `b.${map.id} AS id`,
       `b.${map.product_id} AS product_id`,
@@ -166,7 +210,6 @@ export async function GET(req: NextRequest) {
       map.exp_date ? `(b.${map.exp_date} - CURRENT_DATE) AS days_left` : `NULL::int AS days_left`,
     ].join(",\n        ");
 
-    // ORDER BY: prefer expiry if present
     const order = map.exp_date
       ? `CASE WHEN b.${map.exp_date} IS NULL THEN 1 ELSE 0 END, b.${map.exp_date} NULLS LAST`
       : `b.${map.id} DESC`;
@@ -176,7 +219,7 @@ export async function GET(req: NextRequest) {
       SELECT
         ${sel}
       FROM ${t} b
-      JOIN products p ON p.id = b.${map.product_id}
+      ${joinProducts}
       ${whereSql}
       ORDER BY ${order}
       LIMIT ${pageSize} OFFSET ${offset}
