@@ -21,7 +21,7 @@ backups/
 pgdata/
 redisdata/
 miniodata/
-logs/
+/logs/
 
 # DB / misc artifacts
 *.log

@@ -17,6 +17,7 @@
 9. Added template-aware navigation API and runtime sidebar loading.
 10. Added invoice custom field management API/UI and wired custom fields into billing save + invoice print/PDF/export outputs.
 11. Added RBAC administration module for admin-created users, user listing, and editable role-permission mappings.
+12. Added downloadable support bundle endpoint for diagnostics (app logs + audit logs + LAN/activation snapshot).
 
 ## Pending (Next phase)
 1. Install/verify Rust toolchain and run actual Tauri builds on Windows.
