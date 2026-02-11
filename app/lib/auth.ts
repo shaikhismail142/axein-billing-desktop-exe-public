@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 
 // Dev-friendly admin guard.
-// - If DISABLE_ADMIN_CHECK=1 (compose), always allow.
+// - If DISABLE_ADMIN_CHECK=1 (local/dev override), always allow.
 // - Else allow requests that send x-admin: 1 (curl or local UI if you add it).
 export async function isAdmin(req: NextRequest) {
   if (process.env.DISABLE_ADMIN_CHECK === '1') return true;

@@ -1,9 +1,9 @@
 import { Pool } from "pg";
 
 /**
- * Prefer DATABASE_URL when present (Render/Heroku/etc).
- * Otherwise fall back to docker-compose defaults:
- *   host=db user=app password=app db=app
+ * Prefer DATABASE_URL when present.
+ * Otherwise use local desktop defaults (127.0.0.1 with app/app credentials)
+ * unless overridden via PG* env variables.
  */
 
 const connString = process.env.DATABASE_URL;
