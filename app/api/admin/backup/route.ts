@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/app/lib/db';
 import { isAdmin } from '@/app/lib/auth';
+import { requireAnyPermission } from '@/app/lib/request-access';
 
 import PDFDocument from 'pdfkit';
 import { stringify as csvStringify } from 'csv-stringify';
@@ -35,8 +36,8 @@ function istStamp(d = new Date()) {
 
 type PgLike = { query: (text: string, params?: any[]) => Promise<{ rows: any[] }> };
 
-async function tableToCsv(pool: PgLike, sql: string): Promise<Buffer> {
-  const { rows } = await pool.query(sql);
+async function tableToCsv(pool: PgLike, sql: string, params: any[] = []): Promise<Buffer> {
+  const { rows } = await pool.query(sql, params);
   return new Promise((resolve, reject) => {
     let text = '';
     const csv = csvStringify({ header: true });
@@ -50,15 +51,31 @@ async function tableToCsv(pool: PgLike, sql: string): Promise<Buffer> {
   });
 }
 
-async function makeInvoicePdf(pool: PgLike, saleId: string): Promise<Buffer> {
+async function getColumns(pool: PgLike, table: string): Promise<Set<string>> {
+  const { rows } = await pool.query(
+    `SELECT LOWER(column_name) AS col
+       FROM information_schema.columns
+      WHERE table_schema='public' AND table_name=$1`,
+    [table]
+  );
+  return new Set((rows || []).map((r: any) => String(r.col)));
+}
+
+async function makeInvoicePdf(
+  pool: PgLike,
+  saleId: string,
+  businessId: number,
+  hasSalesBusiness: boolean,
+  hasItemsBusiness: boolean
+): Promise<Buffer> {
   const { rows: saleRows } = await pool.query(
     `SELECT s.id, s.created_at, s.invoice_date, s.meta, s.customer_id,
             COALESCE(c.name,'Walk-in Customer') AS customer_name,
             COALESCE(c.phone,'') AS customer_phone
      FROM sales s
      LEFT JOIN customers c ON c.id = s.customer_id
-     WHERE s.id = $1`,
-    [saleId]
+     WHERE s.id = $1${hasSalesBusiness ? ' AND s.business_id = $2' : ''}`,
+    hasSalesBusiness ? [saleId, businessId] : [saleId]
   );
   if (!saleRows.length) throw new Error('sale not found');
 
@@ -66,9 +83,9 @@ async function makeInvoicePdf(pool: PgLike, saleId: string): Promise<Buffer> {
     `SELECT si.*, COALESCE(p.name, '') AS product_name
      FROM sale_items si
      LEFT JOIN products p ON p.id = si.product_id
-     WHERE si.sale_id = $1
+     WHERE si.sale_id = $1${hasItemsBusiness ? ' AND si.business_id = $2' : ''}
      ORDER BY si.id`,
-    [saleId]
+    hasItemsBusiness ? [saleId, businessId] : [saleId]
   );
 
   return await new Promise<Buffer>((resolve) => {
@@ -131,9 +148,18 @@ async function tableExists(pool: PgLike, table: string): Promise<boolean> {
   return !!rows?.[0]?.reg;
 }
 
+async function tableHasBusinessColumn(pool: PgLike, table: string): Promise<boolean> {
+  if (!(await tableExists(pool, table))) return false;
+  const cols = await getColumns(pool, table);
+  return cols.has('business_id');
+}
+
 export async function POST(req: NextRequest) {
   try {
-    if (!(await isAdmin(req))) return new Response('Forbidden', { status: 403 });
+    const access = await requireAnyPermission(req, ['perm.backup.manage'], 'Forbidden');
+    const adminFallback = await isAdmin(req);
+    if (!access.ok && !adminFallback) return new Response('Forbidden', { status: 403 });
+    const businessId = access.ok ? access.ctx.businessId : 1;
 
     const pool: PgLike = getDb();
 
@@ -183,22 +209,33 @@ export async function POST(req: NextRequest) {
     for (const table of tables) {
       if (!(await tableExists(pool, table))) continue;
       try {
-        const csv = await tableToCsv(pool, `SELECT * FROM ${table}`);
+        const hasBusiness = await tableHasBusinessColumn(pool, table);
+        const sql = `SELECT * FROM ${table}${hasBusiness ? ' WHERE business_id = $1' : ''}`;
+        const csv = await tableToCsv(pool, sql, hasBusiness ? [businessId] : []);
         archive.append(csv, { name: `db/${table}.csv` });
       } catch (e: any) {
         logLine(`backup: table ${table} failed (${e?.message || e})`);
       }
     }
 
-    const { rows: settings } = await pool.query('SELECT key, value_json FROM settings ORDER BY key');
+    const hasSettingsBusiness = await tableHasBusinessColumn(pool, 'settings');
+    const { rows: settings } = await pool.query(
+      `SELECT key, value_json FROM settings${hasSettingsBusiness ? ' WHERE business_id = $1' : ''} ORDER BY key`,
+      hasSettingsBusiness ? [businessId] : []
+    );
     const settingsBuf = Buffer.from(JSON.stringify(settings, null, 2));
     archive.append(settingsBuf, { name: 'db/settings.json' });
 
     // 4) Invoice PDFs (best effort)
-    const { rows: saleIds } = await pool.query('SELECT id FROM sales ORDER BY id');
+    const hasSalesBusiness = await tableHasBusinessColumn(pool, 'sales');
+    const hasSaleItemsBusiness = await tableHasBusinessColumn(pool, 'sale_items');
+    const { rows: saleIds } = await pool.query(
+      `SELECT id FROM sales${hasSalesBusiness ? ' WHERE business_id = $1' : ''} ORDER BY id`,
+      hasSalesBusiness ? [businessId] : []
+    );
     for (const r of saleIds as Array<{ id: string }>) {
       try {
-        const pdf = await makeInvoicePdf(pool, r.id);
+        const pdf = await makeInvoicePdf(pool, r.id, businessId, hasSalesBusiness, hasSaleItemsBusiness);
         archive.append(pdf, { name: `invoices/${r.id}.pdf` });
       } catch (e: any) {
         logLine(`invoice ${r.id} pdf fail: ${e.message}`);

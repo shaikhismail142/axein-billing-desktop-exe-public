@@ -2,6 +2,7 @@
 import { NextRequest } from 'next/server';
 import { isAdmin } from '@/app/lib/auth';
 import { getDb } from '@/app/lib/db';
+import { requireAnyPermission } from '@/app/lib/request-access';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -358,7 +359,9 @@ async function upsertRowDynamic(
 // ---------------- main route ----------------
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdmin(req))) return new Response('Forbidden', { status: 403 });
+  const access = await requireAnyPermission(req, ['perm.backup.manage'], 'Forbidden');
+  const adminFallback = await isAdmin(req);
+  if (!access.ok && !adminFallback) return new Response('Forbidden', { status: 403 });
 
   const url = new URL(req.url);
   const ct = req.headers.get('content-type') || '';

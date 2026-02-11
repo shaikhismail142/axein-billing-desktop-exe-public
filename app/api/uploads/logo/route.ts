@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 import crypto from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
+import { requireAnyPermission } from "@/app/lib/request-access";
 
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp"]);
 const EXT_FROM_MIME: Record<string, string> = {
@@ -34,6 +35,10 @@ function makeFilename(ext: string) {
 
 export async function POST(req: Request) {
   try {
+    const access = await requireAnyPermission(req, ["perm.settings.manage"], "Forbidden");
+    if (!access.ok) return access.response;
+    const businessId = access.ctx.businessId;
+
     const ctype = req.headers.get("content-type") || "";
     if (!ctype.toLowerCase().includes("multipart/form-data")) {
       return NextResponse.json(
@@ -80,7 +85,7 @@ export async function POST(req: Request) {
     const ext = (byMime || byName || "png").toLowerCase();
 
     // Ensure upload dir exists
-    const dir = path.join(process.cwd(), "public", "uploads", "logos");
+    const dir = path.join(process.cwd(), "public", "uploads", "logos", String(businessId));
     await mkdir(dir, { recursive: true });
 
     // Generate unique filename & write
@@ -92,7 +97,7 @@ export async function POST(req: Request) {
     await writeFile(filepath, u8);
 
     // Public URL (served by Next static from /public)
-    const url = `/uploads/logos/${filename}`;
+    const url = `/uploads/logos/${businessId}/${filename}`;
 
     return NextResponse.json({ url }, { status: 200 });
   } catch (err: any) {
