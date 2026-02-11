@@ -72,18 +72,43 @@ CREATE INDEX IF NOT EXISTS products_name_idx  ON public.products  (LOWER(name));
 CREATE INDEX IF NOT EXISTS sales_created_at_idx ON public.sales(created_at);
 CREATE INDEX IF NOT EXISTS sales_customer_id_idx ON public.sales(customer_id);
 
--- Seed default business settings if missing (Print header uses this)
-INSERT INTO public.settings(key, value_json)
-VALUES (
-  'business',
-  jsonb_build_object(
-    'name','Your Shop Name',
-    'address','', 'phone','', 'gstin','',
-    'signature_name','Owner Name',
-    'signature_title','Proprietor',
-    'signature_image_url',''
-  )
-) ON CONFLICT (key) DO NOTHING;
+-- Seed default business settings if missing (Print header uses this).
+-- Newer schemas enforce settings.business_id NOT NULL, older schemas do not.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'settings'
+       AND column_name = 'business_id'
+  ) THEN
+    INSERT INTO public.settings (business_id, key, value_json)
+    VALUES (
+      1,
+      'business',
+      jsonb_build_object(
+        'name','Your Shop Name',
+        'address','', 'phone','', 'gstin','',
+        'signature_name','Owner Name',
+        'signature_title','Proprietor',
+        'signature_image_url',''
+      )
+    ) ON CONFLICT (key) DO NOTHING;
+  ELSE
+    INSERT INTO public.settings (key, value_json)
+    VALUES (
+      'business',
+      jsonb_build_object(
+        'name','Your Shop Name',
+        'address','', 'phone','', 'gstin','',
+        'signature_name','Owner Name',
+        'signature_title','Proprietor',
+        'signature_image_url',''
+      )
+    ) ON CONFLICT (key) DO NOTHING;
+  END IF;
+END $$;
 
 -- =========================
 -- Email OTP Activation (single-tenant)
@@ -149,4 +174,3 @@ CREATE TABLE IF NOT EXISTS public.app_state (
 INSERT INTO public.app_state (k, v)
 SELECT 'activation', jsonb_build_object('ok', false)
 WHERE NOT EXISTS (SELECT 1 FROM public.app_state WHERE k='activation');
-

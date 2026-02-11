@@ -40,6 +40,7 @@
 28. Added computer-limit licensing model (host + LAN clients) across onboarding, license payload signing/verification, local activation metadata, status/support endpoints, and LAN pair/approve enforcement.
 29. Added DB migration `20260213_add_computer_limits.sql` and compatibility fallbacks for environments that have not yet applied the migration.
 30. Removed archived legacy Docker/bootstrap assets and stale installer/license artifacts from the EXE repository tree.
+31. Hardened desktop migration runner with Postgres connection fallbacks and persistent migration history tracking (`schema_migrations`) so reruns are idempotent on existing customer databases.
 
 ## Pending (Next phase)
 1. Run Tauri native build on Windows build machine and produce signed NSIS installer artifacts.
