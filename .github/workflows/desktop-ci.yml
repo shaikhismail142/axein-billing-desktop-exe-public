@@ -34,3 +34,6 @@ jobs:
 
       - name: Prepare desktop runtime
         run: npm run desktop:prepare-runtime
+
+      - name: LAN security self-test
+        run: npm run desktop:lan:selftest

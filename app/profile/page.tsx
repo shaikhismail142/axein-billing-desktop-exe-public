@@ -25,6 +25,11 @@ const cards = [
     desc: "Approve pending users, assign roles, and review RBAC access visibility.",
   },
   {
+    href: "/profile/network",
+    title: "Network (LAN)",
+    desc: "Configure host/client mode, generate pairing codes, and manage connected PCs.",
+  },
+  {
     href: "/profile/logs",
     title: "Diagnostics Logs",
     desc: "View and download logs for sharing with AxEin support when issues occur.",

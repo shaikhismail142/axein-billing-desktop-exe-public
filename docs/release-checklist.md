@@ -4,6 +4,7 @@
 1. `npm ci` successful.
 2. `npm run desktop:preflight` successful.
 3. Local DB migration pass (`npm run desktop:db:migrate`) successful.
+4. LAN security self-test pass (`npm run desktop:lan:selftest`).
 
 ## Build and package
 1. `npm run desktop:web:build`

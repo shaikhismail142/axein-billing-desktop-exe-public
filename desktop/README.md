@@ -15,6 +15,7 @@ npm run desktop:preflight
 npm run desktop:web:build
 npm run desktop:prepare-runtime
 npm run desktop:bundle-node
+npm run desktop:lan:selftest
 npm run desktop:smoke
 npm run desktop:build
 npm run desktop:release:metadata

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestBusinessId, getRequestUserId } from "@/app/lib/platform-context";
 import { canViewBusinessRevenue, getUserPermissionCodes, getUserRoles } from "@/app/lib/platform-rbac";
+import { authenticateLanClient } from "@/app/lib/lan-auth";
 
 export type AccessContext = {
   businessId: number;
@@ -19,6 +20,16 @@ function isAdminBypass(req: Request): boolean {
 }
 
 export async function resolveAccessContext(req: Request): Promise<AccessContext> {
+  const lanAuth = await authenticateLanClient(req);
+  if (lanAuth.ok) {
+    return {
+      businessId: lanAuth.businessId,
+      userId: 0,
+      permissions: lanAuth.permissions,
+      revenueVisible: lanAuth.revenueVisible,
+    };
+  }
+
   const businessId = getRequestBusinessId(req, 1);
   const userId = getRequestUserId(req, 1);
 
@@ -59,6 +70,62 @@ export async function requireRevenueAccess(req: Request): Promise<
         { status: 403 }
       ),
     };
+  }
+
+  return { ok: true, ctx };
+}
+
+export async function requireAnyPermission(
+  req: Request,
+  permissionCodes: string[],
+  errorMessage = "Forbidden"
+): Promise<{ ok: true; ctx: AccessContext } | { ok: false; response: NextResponse }> {
+  if (!Array.isArray(permissionCodes) || permissionCodes.length === 0) {
+    const ctx = await resolveAccessContext(req);
+    return { ok: true, ctx };
+  }
+
+  if (isAdminBypass(req)) {
+    const ctx = await resolveAccessContext(req).catch(() => ({
+      businessId: getRequestBusinessId(req, 1),
+      userId: getRequestUserId(req, 1),
+      permissions: permissionCodes,
+      revenueVisible: true,
+    }));
+    return { ok: true, ctx };
+  }
+
+  const ctx = await resolveAccessContext(req);
+  if (!permissionCodes.some((code) => ctx.permissions.includes(code))) {
+    return { ok: false, response: NextResponse.json({ error: errorMessage }, { status: 403 }) };
+  }
+
+  return { ok: true, ctx };
+}
+
+export async function requireAllPermissions(
+  req: Request,
+  permissionCodes: string[],
+  errorMessage = "Forbidden"
+): Promise<{ ok: true; ctx: AccessContext } | { ok: false; response: NextResponse }> {
+  if (!Array.isArray(permissionCodes) || permissionCodes.length === 0) {
+    const ctx = await resolveAccessContext(req);
+    return { ok: true, ctx };
+  }
+
+  if (isAdminBypass(req)) {
+    const ctx = await resolveAccessContext(req).catch(() => ({
+      businessId: getRequestBusinessId(req, 1),
+      userId: getRequestUserId(req, 1),
+      permissions: permissionCodes,
+      revenueVisible: true,
+    }));
+    return { ok: true, ctx };
+  }
+
+  const ctx = await resolveAccessContext(req);
+  if (!permissionCodes.every((code) => ctx.permissions.includes(code))) {
+    return { ok: false, response: NextResponse.json({ error: errorMessage }, { status: 403 }) };
   }
 
   return { ok: true, ctx };
