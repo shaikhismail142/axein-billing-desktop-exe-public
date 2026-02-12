@@ -30,20 +30,16 @@ npm run desktop:prepare-runtime
 npm run desktop:bundle-node
 ```
 
-## Apply DB migrations to local Postgres
-Use either `DATABASE_URL` or PG env vars:
+## Database mode for desktop runtime
+- Default desktop runtime mode uses embedded local DB (PGlite path) for first-run/install simplicity.
+- You can still migrate/connect to external/local Postgres when needed:
 ```bash
-set PGHOST=127.0.0.1
-set PGPORT=5432
-set PGUSER=app
-set PGPASSWORD=app
-set PGDATABASE=app
 npm run desktop:db:migrate
 ```
 
-Notes:
-- The migration runner auto-tries safe local fallback connections when the target host is local, including cases where `PG*` or `DATABASE_URL` point to a missing local role (for example `role "app" does not exist`).
-- It tracks applied files in `public.schema_migrations`, so reruns are safe and only apply pending migrations.
+Postgres notes:
+- The migration runner auto-tries safe local fallback connections when a local role/db mismatch occurs (for example `role "app" does not exist`).
+- Applied migrations are tracked in `public.schema_migrations`, so reruns are safe.
 
 ## Run desktop app in dev mode (Tauri + local web runtime)
 ```bash
@@ -72,17 +68,25 @@ GitHub Actions option:
 
 Output artifact:
 - `desktop/src-tauri/target/release/bundle/nsis/*.exe`
+- Includes both customer app and staff keygen installers in the same artifact folder.
 - `desktop/release/SHA256SUMS.txt`
 - `desktop/release/release-manifest.json`
 - `desktop/release/installer-verification.json`
 
-## Runtime env notes
-Desktop runtime expects DB connectivity via:
-- `DATABASE_URL`
-- or `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
+## Staff keygen
+```bash
+npm run desktop:keygen:build
+```
 
-For desktop mode, app defaults `PGHOST` to `127.0.0.1` when `AXEIN_DESKTOP=1`.
-If local credentials are missing/mismatched, desktop runtime now auto-tries safe local fallback candidates (OS-user socket/localhost profiles) before failing.
+Security:
+- Keygen endpoint/UI must stay disabled in customer runtime (enabled only in keygen build path).
+- Set `AXEIN_SUPER_KEYGEN_PASSWORD` before build.
+- Internal fallback currently in code: `AxEin!K3yG3n#2026@Sup3r-Only` (override for production).
+
+## Runtime env notes
+Desktop runtime supports:
+- Embedded local DB mode (default desktop path)
+- External/local Postgres via `DATABASE_URL` or `PG*` envs
 
 ## Important
 - Customer runtime does not require Docker.

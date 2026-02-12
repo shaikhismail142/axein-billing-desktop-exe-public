@@ -7,14 +7,16 @@ Included installers:
 
 Staff super password:
 - Set via environment variable `AXEIN_SUPER_KEYGEN_PASSWORD` **before** building the keygen.
+- Internal fallback (if env not set): `AxEin!K3yG3n#2026@Sup3r-Only`
 - Do NOT ship the super password or private key to customers.
 
 Installing (Windows 10/11):
 1) Run `AxEin Billing Desktop_*_setup.exe`.
-2) Launch the app; the setup wizard will open.
+2) Launch the app; the setup wizard opens.
 3) Enter license token or start 7-day trial.
-4) Provide business details and pick the business template.
-5) Finish and start billing.
+4) Enter business details (users/computers/usage mode/owner account).
+5) Pick template and finish setup.
+6) Billing dashboard opens with template defaults applied.
 
 Staff keygen:
 1) Run `AxEin License Keygen_*_setup.exe` on staff machine only.
