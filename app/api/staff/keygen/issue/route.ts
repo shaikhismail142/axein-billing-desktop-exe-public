@@ -131,6 +131,9 @@ function forbidden(message: string) {
 }
 
 export async function POST(req: Request) {
+  if (process.env.AXEIN_INCLUDE_KEYGEN_UI !== "1") {
+    return NextResponse.json({ ok: false, error: "Not available" }, { status: 404 });
+  }
   try {
     if (req.headers.get("x-admin") !== "1") {
       return forbidden("Admin context required");

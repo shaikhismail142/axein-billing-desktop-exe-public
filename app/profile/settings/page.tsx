@@ -652,6 +652,17 @@ export default function SettingsPage() {
         </Suspense>
       </section>
 
+      {/* Template reset */}
+      <section className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+        <h2 className="text-lg font-semibold">Business Template Reset</h2>
+        <p className="mt-1 text-sm opacity-80">
+          Re-run the business/template setup wizard while keeping the current license or trial state intact.
+        </p>
+        <div className="mt-3">
+          <Link className="btn btn-primary" href="/register-business">Open Template Setup Wizard</Link>
+        </div>
+      </section>
+
       {/* Backup & Restore */}
       <section className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
         <h2 className="text-lg font-semibold">Admin • Backups</h2>

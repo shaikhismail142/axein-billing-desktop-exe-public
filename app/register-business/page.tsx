@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BUSINESS_TYPES } from "./_constants";
 
 type FormState = {
   license_key: string;
@@ -17,17 +18,6 @@ type FormState = {
   owner_password: string;
   owner_password_confirm: string;
 };
-
-const businessTypes = [
-  ["clinic", "Clinic"],
-  ["general_store", "General Store"],
-  ["spa_saloon", "Spa/Saloon"],
-  ["hardware_store", "Hardware Store"],
-  ["mobile_store", "Mobile Store"],
-  ["hotel", "Hotel"],
-  ["restaurant", "Restaurant"],
-  ["school_institute", "School/Institute"],
-] as const;
 
 function normalizeLicenseBody(raw: string) {
   if (raw.startsWith("L-")) return { token: raw };
@@ -181,7 +171,7 @@ export default function RegisterBusinessPage() {
               <label>
                 <div className="muted">Business Type</div>
                 <select className="input" value={form.business_type} onChange={(e) => update("business_type", e.target.value)}>
-                  {businessTypes.map(([value, label]) => (
+                  {BUSINESS_TYPES.map(([value, label]) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </select>
@@ -261,7 +251,6 @@ export default function RegisterBusinessPage() {
               {busy ? "Registering..." : "Activate + Register Business"}
             </button>
             <a className="btn" href="/signup">Open User Sign Up</a>
-            <a className="btn" href="/staff/keygen">Open Staff Keygen</a>
           </div>
         </form>
       </div>

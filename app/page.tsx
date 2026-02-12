@@ -36,7 +36,7 @@ export default async function Page() {
 
   if (process.env.APP_REQUIRE_BUSINESS_SETUP === "true") {
     const ready = await hasRegisteredBusiness();
-    if (!ready) redirect("/register-business");
+    if (!ready) redirect("/activate");
   }
 
   // If activated (or activation not required), send root to the dashboard

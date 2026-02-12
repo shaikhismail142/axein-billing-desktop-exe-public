@@ -53,9 +53,17 @@ export const revalidate = 0;
 
 export async function POST(req: Request) {
   try {
+    let businessId = 1;
     const access = await requireAnyPermission(req, ["perm.license.manage", "perm.settings.manage"], "Forbidden");
-    if ("response" in access) return access.response;
-    const businessId = access.ctx.businessId;
+    if ("response" in access) {
+      // bootstrap: allow when no business exists yet
+      const rs = await pool.query(`SELECT id FROM businesses ORDER BY id ASC LIMIT 1`).catch(() => null);
+      if (rs?.rows?.length) {
+        return access.response;
+      }
+    } else {
+      businessId = access.ctx.businessId;
+    }
 
     const body = await req.json().catch(() => ({} as any));
 

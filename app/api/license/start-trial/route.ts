@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { startTrial, getActivationStatus } from "@/app/lib/license-activation";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import { pool } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,7 +17,14 @@ function json(data: any, status = 200) {
 export async function POST(req: Request) {
   try {
     const access = await requireAnyPermission(req, ["perm.license.manage", "perm.settings.manage"], "Forbidden");
-    if ("response" in access) return access.response;
+    if ("response" in access) {
+      // Bootstrap: allow trial when no business exists yet
+      const rs = await pool
+        .query(`SELECT COUNT(*)::int AS cnt FROM businesses`)
+        .catch(() => ({ rows: [{ cnt: 0 }] }));
+      const cnt = Number(rs?.rows?.[0]?.cnt || 0);
+      if (cnt > 0) return access.response;
+    }
 
     // Start (or re-affirm) a 7-day trial; implementation should
     // respect trial_allowed and existing trial state internally.

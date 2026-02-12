@@ -1,6 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { notFound } from "next/navigation";
+
+export default function StaffKeygenPageWrapper() {
+  if (process.env.AXEIN_INCLUDE_KEYGEN_UI !== "1") {
+    notFound();
+  }
+  return <StaffKeygenPage />;
+}
 
 type KeygenForm = {
   super_password: string;
@@ -59,7 +67,7 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
-export default function StaffKeygenPage() {
+function StaffKeygenPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);

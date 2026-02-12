@@ -216,7 +216,7 @@ export default function LicensePanel({
           <div className="text-sm">
             <div className="mb-2 text-slate-600 dark:text-slate-400">
               <span className="font-medium text-slate-800 dark:text-slate-200">Device ID:</span>{' '}
-              <code className="rounded bg-slate-100 px-1 py-0.5 dark:bg-slate-800">
+              <code className="rounded bg-slate-100 px-1 py-0.5 dark:bg-slate-800 break-all inline-block">
                 {status?.deviceId || '—'}
               </code>
             </div>

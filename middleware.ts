@@ -9,6 +9,11 @@ const NO_STORE_HEADERS = {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  const keygenEnabled = process.env.AXEIN_INCLUDE_KEYGEN_UI === "1";
+  if (!keygenEnabled && (pathname.startsWith("/staff/keygen") || pathname.startsWith("/api/staff/keygen"))) {
+    return new NextResponse("Not Found", { status: 404 });
+  }
+
   // Allow static and public assets without checks
   if (
     pathname.startsWith("/_next/") ||
@@ -30,9 +35,7 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/license") ||
     pathname.startsWith("/register-business") ||
-    pathname.startsWith("/signup") ||
-    pathname.startsWith("/staff/keygen") ||
-    pathname.startsWith("/api/staff/keygen")
+    pathname.startsWith("/signup")
   ) {
     return NextResponse.next();
   }

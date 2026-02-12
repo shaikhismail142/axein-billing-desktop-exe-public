@@ -19,7 +19,10 @@ function run(scriptPath, env = {}) {
   }
 }
 
-run(path.join(root, "desktop", "scripts", "run-next-build.mjs"));
+run(path.join(root, "desktop", "scripts", "run-next-build.mjs"), {
+  AXEIN_INCLUDE_KEYGEN_UI: "1",
+});
 run(path.join(root, "desktop", "scripts", "prepare-runtime.mjs"), {
   AXEIN_INCLUDE_KEYGEN_PRIVATE: "1",
+  AXEIN_INCLUDE_KEYGEN_UI: "1",
 });

@@ -21,6 +21,8 @@ npm run desktop:build
 npm run desktop:keygen:build
 ```
 
+Staff keygen requires `AXEIN_SUPER_KEYGEN_PASSWORD` and should be distributed only to AxEin staff. The billing installer must not ship the keygen or its private key.
+
 ## QA and operations
 ```bash
 npm run desktop:runtime:start
