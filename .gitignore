@@ -37,3 +37,6 @@ desktop/runtime/node/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 desktop/release/SHA256SUMS.txt
+desktop/release/release-manifest.json
+desktop/release/installer-verification.json
+desktop/release/RELEASE_NOTES.template.md

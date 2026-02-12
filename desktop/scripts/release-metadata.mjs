@@ -4,12 +4,17 @@ import fssync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const root = path.resolve(__dirname, "..", "..");
 const bundleDir = path.join(root, "desktop", "src-tauri", "target", "release", "bundle", "nsis");
 const releaseDir = path.join(root, "desktop", "release");
+const manifestFile = path.join(releaseDir, "release-manifest.json");
+const releaseNotesTemplateFile = path.join(releaseDir, "RELEASE_NOTES.template.md");
+const tauriConfigFile = path.join(root, "desktop", "src-tauri", "tauri.conf.json");
+const packageJsonFile = path.join(root, "package.json");
 
 async function sha256(filePath) {
   const hash = crypto.createHash("sha256");
@@ -21,8 +26,32 @@ async function sha256(filePath) {
   });
 }
 
+function git(cmdArgs) {
+  const out = spawnSync("git", cmdArgs, { cwd: root, stdio: "pipe", encoding: "utf8" });
+  if (out.status !== 0) return "";
+  return (out.stdout || "").trim();
+}
+
+function formatBytes(bytes) {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = Number(bytes || 0);
+  let idx = 0;
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024;
+    idx += 1;
+  }
+  return `${value.toFixed(idx === 0 ? 0 : 2)} ${units[idx]}`;
+}
+
 async function main() {
   await fs.mkdir(releaseDir, { recursive: true });
+
+  const [tauriRaw, pkgRaw] = await Promise.all([
+    fs.readFile(tauriConfigFile, "utf8"),
+    fs.readFile(packageJsonFile, "utf8"),
+  ]);
+  const tauri = JSON.parse(tauriRaw);
+  const pkg = JSON.parse(pkgRaw);
 
   let files = [];
   try {
@@ -39,15 +68,77 @@ async function main() {
   }
 
   const lines = [];
+  const artifacts = [];
   for (const file of files) {
+    const stat = await fs.stat(file);
     const digest = await sha256(file);
-    lines.push(`${digest}  ${path.basename(file)}`);
+    const name = path.basename(file);
+    lines.push(`${digest}  ${name}`);
+    artifacts.push({
+      file_name: name,
+      full_path: file,
+      size_bytes: stat.size,
+      size_human: formatBytes(stat.size),
+      modified_at: stat.mtime.toISOString(),
+      sha256: digest,
+    });
   }
 
   const output = lines.join("\n") + "\n";
   const outFile = path.join(releaseDir, "SHA256SUMS.txt");
   await fs.writeFile(outFile, output, "utf8");
+
+  const manifest = {
+    generated_at: new Date().toISOString(),
+    git: {
+      branch: git(["branch", "--show-current"]),
+      commit: git(["rev-parse", "HEAD"]),
+      commit_short: git(["rev-parse", "--short", "HEAD"]),
+    },
+    app: {
+      package_name: pkg.name,
+      package_version: pkg.version,
+      tauri_product_name: tauri.productName,
+      tauri_version: tauri.version,
+      tauri_identifier: tauri.identifier,
+      bundle_targets: tauri.bundle?.targets || [],
+    },
+    artifacts,
+  };
+  await fs.writeFile(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+  const artifactLines = artifacts
+    .map((a) => `- \`${a.file_name}\` (${a.size_human}, sha256: \`${a.sha256}\`)`)
+    .join("\n");
+  const releaseNotesTemplate = [
+    "# AxEin Desktop Release Notes",
+    "",
+    `- Build date (UTC): ${manifest.generated_at}`,
+    `- Branch: ${manifest.git.branch || "(unknown)"}`,
+    `- Commit: ${manifest.git.commit_short || manifest.git.commit || "(unknown)"}`,
+    `- App version: ${manifest.app.tauri_version || manifest.app.package_version || "(unknown)"}`,
+    "",
+    "## Artifacts",
+    artifactLines,
+    "",
+    "## Validation",
+    "- [ ] npm run lint",
+    "- [ ] npm run desktop:web:build",
+    "- [ ] npm run desktop:db:migrate",
+    "- [ ] npm run desktop:lan:selftest",
+    "- [ ] npm run desktop:smoke",
+    "- [ ] npm run desktop:release:verify -- --strict",
+    "",
+    "## Notes",
+    "- Fill functional changes for this release.",
+    "- Fill known risks and rollback notes.",
+    "",
+  ].join("\n");
+  await fs.writeFile(releaseNotesTemplateFile, releaseNotesTemplate, "utf8");
+
   console.log(`Wrote ${outFile}`);
+  console.log(`Wrote ${manifestFile}`);
+  console.log(`Wrote ${releaseNotesTemplateFile}`);
 }
 
 main().catch((err) => {

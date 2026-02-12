@@ -59,10 +59,22 @@ npm run desktop:runtime:start
 ```bash
 npm run desktop:build
 npm run desktop:release:metadata
+npm run desktop:release:verify -- --strict
 ```
+
+One-shot release pipeline (Windows machine):
+```bash
+npm run desktop:release:windows
+```
+
+GitHub Actions option:
+- Run workflow `Desktop Windows Release` (manual trigger) to build installer and upload release artifacts.
 
 Output artifact:
 - `desktop/src-tauri/target/release/bundle/nsis/*.exe`
+- `desktop/release/SHA256SUMS.txt`
+- `desktop/release/release-manifest.json`
+- `desktop/release/installer-verification.json`
 
 ## Runtime env notes
 Desktop runtime expects DB connectivity via:

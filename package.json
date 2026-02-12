@@ -17,6 +17,8 @@
     "desktop:smoke": "node ./desktop/scripts/smoke-test-runtime.mjs",
     "desktop:db:migrate": "node ./desktop/scripts/apply-migrations.mjs",
     "desktop:release:metadata": "node ./desktop/scripts/release-metadata.mjs",
+    "desktop:release:verify": "node ./desktop/scripts/verify-windows-installer.mjs",
+    "desktop:release:windows": "npm run desktop:build && npm run desktop:release:metadata && npm run desktop:release:verify -- --strict",
     "desktop:tauri": "node ./node_modules/@tauri-apps/cli/tauri.js",
     "desktop:dev": "npm run desktop:tauri -- dev --config ./desktop/src-tauri/tauri.conf.json",
     "desktop:build": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.conf.json"

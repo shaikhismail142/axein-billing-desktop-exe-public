@@ -37,3 +37,9 @@ jobs:
 
       - name: LAN security self-test
         run: npm run desktop:lan:selftest
+
+      - name: Desktop smoke test
+        run: npm run desktop:smoke
+
+      - name: Release verifier script sanity (allow missing installer)
+        run: npm run desktop:release:verify -- --allow-missing

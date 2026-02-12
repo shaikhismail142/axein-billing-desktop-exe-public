@@ -13,11 +13,15 @@
 4. `npm run desktop:smoke`
 5. `npm run desktop:build`
 6. `npm run desktop:release:metadata`
+7. `npm run desktop:release:verify -- --strict`
 
 ## Verify artifacts
 1. NSIS installer exists under `desktop/src-tauri/target/release/bundle/nsis`.
 2. SHA256 sums file generated under `desktop/release/SHA256SUMS.txt`.
-3. Installer launches app and `/api/health` returns `ok=true`.
+3. Release manifest generated under `desktop/release/release-manifest.json`.
+4. Installer verification report generated under `desktop/release/installer-verification.json`.
+5. Installer launches app and `/api/health` returns `ok=true`.
+6. If signing is mandatory for production builds, run with `AXEIN_REQUIRE_SIGNED=1`.
 
 ## Functional gates
 1. Register business flow works.
@@ -25,3 +29,6 @@
 3. License key activation works with staff keygen output.
 4. Logs can be downloaded from Profile > Logs.
 5. Revenue visibility remains admin-only.
+
+## Single-command Windows release flow
+1. `npm run desktop:release:windows`

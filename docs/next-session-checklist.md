@@ -10,8 +10,10 @@
   - `npm run desktop:lan:selftest`
 
 ## Next engineering step
-1. Windows installer/packaging hardening (Tauri + NSIS output validation).
-2. Release artifact flow (build metadata, installer verification, release notes).
+1. Execute Windows installer build on Windows machine and run strict verifier:
+   - `npm run desktop:release:windows`
+2. Validate installer lifecycle on clean Windows 10/11:
+   - install, upgrade, uninstall, reinstall.
 3. Permission-boundary regression pass (Admin-only revenue/profit visibility and RBAC edge checks).
 4. Low-spec performance pass (startup time, runtime memory, background activity review).
 
