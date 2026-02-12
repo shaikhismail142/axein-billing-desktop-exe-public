@@ -4,7 +4,11 @@ import { spawnSync } from "node:child_process";
 function checkWithCandidates(candidates, args = ["--version"]) {
   let last = { ok: false, text: "not available" };
   for (const cmd of candidates) {
-    const out = spawnSync(cmd, args, { stdio: "pipe", encoding: "utf8" });
+    const out = spawnSync(cmd, args, {
+      stdio: "pipe",
+      encoding: "utf8",
+      shell: process.platform === "win32",
+    });
     if (out.status === 0) {
       return { ok: true, text: (out.stdout || out.stderr || "").trim(), cmd };
     }
