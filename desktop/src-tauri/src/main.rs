@@ -41,21 +41,55 @@ fn resolve_node_binary(resource_dir: &Path) -> PathBuf {
 
     #[cfg(target_os = "windows")]
     {
-        let bundled = resource_dir.join("runtime").join("node").join("node.exe");
-        if bundled.exists() {
-            return bundled;
+        let bundled_candidates = [
+            resource_dir.join("runtime").join("node").join("node.exe"),
+            resource_dir.join("node").join("node.exe"),
+        ];
+        for bundled in bundled_candidates {
+            if bundled.exists() {
+                return bundled;
+            }
         }
         return PathBuf::from("node.exe");
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        let bundled = resource_dir.join("runtime").join("node").join("node");
-        if bundled.exists() {
-            return bundled;
+        let bundled_candidates = [
+            resource_dir.join("runtime").join("node").join("node"),
+            resource_dir.join("node").join("node"),
+        ];
+        for bundled in bundled_candidates {
+            if bundled.exists() {
+                return bundled;
+            }
         }
         PathBuf::from("node")
     }
+}
+
+fn resolve_runtime_root(resource_dir: &Path) -> Result<PathBuf, String> {
+    let candidates = [
+        resource_dir.join("runtime").join("app").join("standalone"),
+        resource_dir.join("app").join("standalone"),
+    ];
+
+    for candidate in candidates {
+        if candidate.join("server.js").exists() {
+            return Ok(candidate);
+        }
+    }
+
+    let tried = candidates
+        .iter()
+        .map(|candidate| candidate.join("server.js").to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    Err(format!(
+        "Desktop runtime missing server.js. Looked at: {}",
+        tried
+    ))
 }
 
 fn stop_runtime(app: &tauri::AppHandle) {
@@ -93,14 +127,8 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .resource_dir()
         .map_err(|e| format!("Failed to resolve resource dir: {e}"))?;
 
-    let runtime_root = resource_dir.join("runtime").join("app").join("standalone");
+    let runtime_root = resolve_runtime_root(&resource_dir)?;
     let server_js = runtime_root.join("server.js");
-    if !server_js.exists() {
-        return Err(format!(
-            "Desktop runtime missing: {}",
-            server_js.to_string_lossy()
-        ));
-    }
 
     let log_dir = app
         .path()
