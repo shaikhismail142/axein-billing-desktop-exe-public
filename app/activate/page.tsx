@@ -72,7 +72,10 @@ export default function ActivateWizardPage() {
     setLicenseErr(null);
     setLicenseMsg(null);
     try {
-      const res = await fetch("/api/license/start-trial", { method: "POST" });
+      const res = await fetch("/api/license/start-trial", {
+        method: "POST",
+        headers: { "x-admin": "1" },
+      });
       const j = await res.json();
       if (!res.ok || !j?.ok) throw new Error(j?.error || "Trial start failed");
       setLicenseMsg("Trial started.");
@@ -96,7 +99,7 @@ export default function ActivateWizardPage() {
           : { license_key: licenseInput.trim() };
       const res = await fetch("/api/license/verify-key", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-admin": "1" },
         body: JSON.stringify(body),
       });
       const j = await res.json();

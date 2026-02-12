@@ -171,6 +171,11 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
     let runtime_root = resolve_runtime_root(&search_roots)?;
     let server_js = runtime_root.join("server.js");
     let migrations_dir = runtime_root.join("db").join("migrations");
+    let keygen_mode = runtime_root.join(".axein-keygen-runtime").exists();
+    let keygen_private_key = runtime_root
+        .join("vendor")
+        .join("keygen")
+        .join("ed25519-private.pem");
 
     let log_dir = app
         .path()
@@ -203,11 +208,12 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
     let mut command = Command::new(node_bin);
     command
         .arg(server_js)
-        .current_dir(runtime_root)
+        .current_dir(&runtime_root)
         .env("NODE_ENV", "production")
         .env("PORT", DESKTOP_PORT.to_string())
         .env("HOSTNAME", RUNTIME_HOST)
         .env("AXEIN_DESKTOP", "1")
+        .env("AXEIN_INCLUDE_KEYGEN_UI", if keygen_mode { "1" } else { "0" })
         .env("APP_REQUIRE_BUSINESS_SETUP", "true")
         .env("AXEIN_FORCE_EMBEDDED_DB", "1")
         .env("AXEIN_DB_DATA_DIR", &db_data_dir)
@@ -215,6 +221,10 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_log))
         .stderr(Stdio::from(stderr_log));
+
+    if keygen_mode && keygen_private_key.exists() {
+        command.env("AXEIN_KEYGEN_PRIVATE_KEY_PATH", &keygen_private_key);
+    }
 
     for key in [
         "DATABASE_URL",
