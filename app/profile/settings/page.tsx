@@ -28,6 +28,8 @@ type Business = {
   bank_upi?: string;
 };
 
+type ColorTheme = "blue" | "green" | "amber" | "rose";
+
 const DEFAULTS: Business = {
   name: '',
   address: '',
@@ -46,6 +48,8 @@ const DEFAULTS: Business = {
   bank_branch: '',
   bank_upi: '',
 };
+
+const COLOR_THEME_STORAGE_KEY = "axein_color_theme";
 
 // ---- Trial status types ----
 type LicenseStatus =
@@ -138,6 +142,7 @@ export default function SettingsPage() {
   const [logoError, setLogoError] = useState<string | null>(null);
   const [logoPreviewError, setLogoPreviewError] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [colorTheme, setColorTheme] = useState<ColorTheme>("blue");
   const previewSrc = (() => {
     if (!form.logo_url) return "";
     if (typeof window === "undefined") return form.logo_url;
@@ -147,6 +152,12 @@ export default function SettingsPage() {
       return form.logo_url;
     }
   })();
+
+  function applyColorTheme(nextTheme: ColorTheme) {
+    if (typeof window === "undefined") return;
+    document.documentElement.setAttribute("data-color-theme", nextTheme);
+    localStorage.setItem(COLOR_THEME_STORAGE_KEY, nextTheme);
+  }
 
   // Load business settings
   useEffect(() => {
@@ -163,6 +174,17 @@ export default function SettingsPage() {
         setLoading(false);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(COLOR_THEME_STORAGE_KEY);
+    const normalized: ColorTheme =
+      saved === "green" || saved === "amber" || saved === "rose" || saved === "blue"
+        ? saved
+        : "blue";
+    setColorTheme(normalized);
+    document.documentElement.setAttribute("data-color-theme", normalized);
   }, []);
 
   // Reset preview error when URL changes
@@ -434,6 +456,32 @@ export default function SettingsPage() {
         </div>
       )}
 
+      <section className="rounded-2xl border bg-white p-4 shadow-sm">
+        <h2 className="mb-3 text-lg font-semibold">Appearance</h2>
+        <p className="mb-3 text-sm opacity-80">
+          AxEin desktop runs in light mode only. Choose a color preset for buttons, highlights, and navigation accents.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
+          <label>
+            <div className="muted">Color Preset</div>
+            <select
+              className="input"
+              value={colorTheme}
+              onChange={(e) => {
+                const next = e.target.value as ColorTheme;
+                setColorTheme(next);
+                applyColorTheme(next);
+              }}
+            >
+              <option value="blue">Blue (Default)</option>
+              <option value="green">Green</option>
+              <option value="amber">Amber</option>
+              <option value="rose">Rose</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
       {/* Business Settings */}
       <section className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
         <h2 className="mb-4 text-lg font-semibold">Business Profile</h2>
@@ -596,8 +644,8 @@ export default function SettingsPage() {
       {/* Activation & Trial */}
       <section className="rounded-2xl border bg-white p-0 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
         <div className="flex items-center justify-between border-b p-4 dark:border-neutral-800">
-          <h2 className="text-lg font-semibold">Activation & Trial</h2>
-          <span className="text-xs opacity-70">License management</span>
+          <h2 className="text-lg font-semibold">Activation & Extend License</h2>
+          <span className="text-xs opacity-70">Paste a new key to renew/upgrade seats or validity</span>
         </div>
         <Suspense fallback={<div className="p-6 text-sm opacity-70">Loading…</div>}>
           <LicensePanel redirectOnActive={false} redirectAfterSuccess={false} />

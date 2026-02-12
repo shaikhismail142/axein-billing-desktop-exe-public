@@ -35,6 +35,24 @@
     --ring:         color-mix(in oklab, var(--primary) 55%, transparent);
   }
 
+  :root[data-color-theme="green"] {
+    --primary:      #1f7a4a;
+    --primary-600:  #155f38;
+    --ring:         color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+
+  :root[data-color-theme="amber"] {
+    --primary:      #b36a00;
+    --primary-600:  #8f5400;
+    --ring:         color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+
+  :root[data-color-theme="rose"] {
+    --primary:      #ad2f4f;
+    --primary-600:  #8b2440;
+    --ring:         color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+
   .dark {
     --bg:           #0b0f1a;         /* deep navy */
     --surface-1:    rgba(16,23,42,0.96);
@@ -54,7 +72,7 @@
     --ring:         color-mix(in oklab, var(--primary) 60%, transparent);
   }
 
-  html { color-scheme: light dark; }
+  html { color-scheme: light; }
   html, body { height: 100%; }
   * { box-sizing: border-box; }
 

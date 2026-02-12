@@ -9,7 +9,18 @@ import { pool } from "@/lib/db";
 
 async function hasRegisteredBusiness() {
   try {
-    const rs = await pool.query(`SELECT id FROM businesses WHERE is_active = TRUE ORDER BY id ASC LIMIT 1`);
+    const rs = await pool.query(
+      `SELECT b.id
+         FROM businesses b
+         LEFT JOIN users u
+           ON u.business_id = b.id
+          AND lower(u.status) = 'active'
+        WHERE b.is_active = TRUE
+        GROUP BY b.id
+       HAVING COUNT(u.id) > 0
+        ORDER BY b.id ASC
+        LIMIT 1`
+    );
     return rs.rowCount > 0;
   } catch {
     // Keep backward compatibility before migration is applied.

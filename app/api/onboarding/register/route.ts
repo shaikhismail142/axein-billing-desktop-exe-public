@@ -80,50 +80,122 @@ export async function POST(req: Request) {
   try {
     await client.query("BEGIN");
 
+    const bootstrapBusinessRs = await client.query(
+      `SELECT b.id
+         FROM businesses b
+         LEFT JOIN users u ON u.business_id = b.id
+        WHERE b.is_active = TRUE
+        GROUP BY b.id
+       HAVING COUNT(u.id) = 0
+        ORDER BY b.id ASC
+        LIMIT 1`
+    );
+    const bootstrapBusinessId = Number(bootstrapBusinessRs.rows?.[0]?.id || 0);
+
     const codeCandidateRs = await client.query(
-      `SELECT COUNT(*)::int AS cnt FROM businesses WHERE code = $1`,
-      [codeBase]
+      `SELECT COUNT(*)::int AS cnt
+         FROM businesses
+        WHERE code = $1
+          AND ($2::bigint IS NULL OR id <> $2)`,
+      [codeBase, bootstrapBusinessId > 0 ? bootstrapBusinessId : null]
     );
     const cnt = Number(codeCandidateRs.rows?.[0]?.cnt || 0);
     const code = cnt > 0 ? `${codeBase}-${Date.now().toString().slice(-6)}` : codeBase;
 
     let businessRs;
-    try {
-      businessRs = await client.query(
-        `INSERT INTO businesses
-           (code, name, business_type, user_limit, computer_limit, license_plan_intent, usage_mode, config_json)
-         VALUES
-           ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
-         RETURNING id, code, name, business_type, user_limit, computer_limit`,
-        [
-          code,
-          businessName,
-          businessType,
-          userLimit,
-          Math.max(1, computerLimit),
-          body.license_plan_intent || null,
-          usageMode,
-          JSON.stringify({ template: template.key, template_version: 1 }),
-        ]
-      );
-    } catch (err) {
-      if (!isMissingComputerLimitColumn(err)) throw err;
-      businessRs = await client.query(
-        `INSERT INTO businesses
-           (code, name, business_type, user_limit, license_plan_intent, usage_mode, config_json)
-         VALUES
-           ($1, $2, $3, $4, $5, $6, $7::jsonb)
-         RETURNING id, code, name, business_type, user_limit`,
-        [
-          code,
-          businessName,
-          businessType,
-          userLimit,
-          body.license_plan_intent || null,
-          usageMode,
-          JSON.stringify({ template: template.key, template_version: 1 }),
-        ]
-      );
+    if (bootstrapBusinessId > 0) {
+      try {
+        businessRs = await client.query(
+          `UPDATE businesses
+              SET code = $2,
+                  name = $3,
+                  business_type = $4,
+                  user_limit = $5,
+                  computer_limit = $6,
+                  license_plan_intent = $7,
+                  usage_mode = $8,
+                  config_json = $9::jsonb,
+                  is_active = TRUE,
+                  updated_at = NOW()
+            WHERE id = $1
+          RETURNING id, code, name, business_type, user_limit, computer_limit`,
+          [
+            bootstrapBusinessId,
+            code,
+            businessName,
+            businessType,
+            userLimit,
+            Math.max(1, computerLimit),
+            body.license_plan_intent || null,
+            usageMode,
+            JSON.stringify({ template: template.key, template_version: 1 }),
+          ]
+        );
+      } catch (err) {
+        if (!isMissingComputerLimitColumn(err)) throw err;
+        businessRs = await client.query(
+          `UPDATE businesses
+              SET code = $2,
+                  name = $3,
+                  business_type = $4,
+                  user_limit = $5,
+                  license_plan_intent = $6,
+                  usage_mode = $7,
+                  config_json = $8::jsonb,
+                  is_active = TRUE,
+                  updated_at = NOW()
+            WHERE id = $1
+          RETURNING id, code, name, business_type, user_limit`,
+          [
+            bootstrapBusinessId,
+            code,
+            businessName,
+            businessType,
+            userLimit,
+            body.license_plan_intent || null,
+            usageMode,
+            JSON.stringify({ template: template.key, template_version: 1 }),
+          ]
+        );
+      }
+    } else {
+      try {
+        businessRs = await client.query(
+          `INSERT INTO businesses
+             (code, name, business_type, user_limit, computer_limit, license_plan_intent, usage_mode, config_json)
+           VALUES
+             ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+           RETURNING id, code, name, business_type, user_limit, computer_limit`,
+          [
+            code,
+            businessName,
+            businessType,
+            userLimit,
+            Math.max(1, computerLimit),
+            body.license_plan_intent || null,
+            usageMode,
+            JSON.stringify({ template: template.key, template_version: 1 }),
+          ]
+        );
+      } catch (err) {
+        if (!isMissingComputerLimitColumn(err)) throw err;
+        businessRs = await client.query(
+          `INSERT INTO businesses
+             (code, name, business_type, user_limit, license_plan_intent, usage_mode, config_json)
+           VALUES
+             ($1, $2, $3, $4, $5, $6, $7::jsonb)
+           RETURNING id, code, name, business_type, user_limit`,
+          [
+            code,
+            businessName,
+            businessType,
+            userLimit,
+            body.license_plan_intent || null,
+            usageMode,
+            JSON.stringify({ template: template.key, template_version: 1 }),
+          ]
+        );
+      }
     }
     const business = businessRs.rows[0];
 
@@ -187,6 +259,21 @@ export async function POST(req: Request) {
       [business.id, businessType]
     );
 
+    await client.query(
+      `INSERT INTO role_permissions (role_id, permission_id, allow)
+       SELECT br.id, rp.permission_id, rp.allow
+         FROM roles br
+         JOIN roles sr
+           ON sr.business_id IS NULL
+          AND lower(sr.code) = lower(br.code)
+         JOIN role_permissions rp
+           ON rp.role_id = sr.id
+        WHERE br.business_id = $1
+       ON CONFLICT (role_id, permission_id)
+       DO UPDATE SET allow = EXCLUDED.allow`,
+      [business.id]
+    );
+
     const passwordHash = await bcrypt.hash(ownerPassword, 10);
 
     const ownerUserRs = await client.query(
@@ -229,10 +316,11 @@ export async function POST(req: Request) {
 
     await client.query(
       `INSERT INTO audit_logs (business_id, actor_user_id, action, entity_type, entity_id, meta_json)
-       VALUES ($1, $2, 'business.register', 'business', $1::text, $3::jsonb)`,
+       VALUES ($1, $2, 'business.register', 'business', $3::text, $4::jsonb)`,
       [
         business.id,
         owner.id,
+        String(business.id),
         JSON.stringify({
           business_type: businessType,
           user_limit: userLimit,

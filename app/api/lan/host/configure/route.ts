@@ -93,10 +93,11 @@ export async function PUT(req: NextRequest) {
 
     await client.query(
       `INSERT INTO audit_logs (business_id, actor_user_id, action, entity_type, entity_id, meta_json)
-       VALUES ($1, $2, 'lan.configure', 'lan_host_configs', $1::text, $3::jsonb)`,
+       VALUES ($1, $2, 'lan.configure', 'lan_host_configs', $3::text, $4::jsonb)`,
       [
         businessId,
         actorUserId,
+        String(businessId),
         JSON.stringify({ mode, host_name: hostName, allow_pairing: body.allow_pairing !== false, require_approval: body.require_approval !== false, port }),
       ]
     );

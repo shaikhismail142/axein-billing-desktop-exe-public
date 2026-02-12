@@ -21,10 +21,13 @@
     "desktop:release:windows": "npm run desktop:build && npm run desktop:release:metadata && npm run desktop:release:verify -- --strict",
     "desktop:tauri": "node ./node_modules/@tauri-apps/cli/tauri.js",
     "desktop:dev": "npm run desktop:tauri -- dev --config ./desktop/src-tauri/tauri.conf.json",
-    "desktop:build": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.conf.json"
+    "desktop:build": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.conf.json",
+    "desktop:keygen:dev": "npm run desktop:tauri -- dev --config ./desktop/src-tauri/tauri.keygen.conf.json",
+    "desktop:keygen:build": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.keygen.conf.json"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
+    "@electric-sql/pglite": "^0.3.15",
     "@pdf-lib/fontkit": "^1.1.1",
     "archiver": "^6.0.2",
     "archiver-zip-encrypted": "^1.0.11",
@@ -51,10 +54,10 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.14",
+    "@tauri-apps/cli": "^2.0.0",
     "@types/node": "20.14.12",
     "@types/pg": "8.11.6",
     "@types/react": "18.3.3",
-    "@tauri-apps/cli": "^2.0.0",
     "@typescript-eslint/eslint-plugin": "^8.45.0",
     "@typescript-eslint/parser": "^8.45.0",
     "autoprefixer": "^10.4.21",

@@ -27,7 +27,12 @@ export async function middleware(req: NextRequest) {
   // Allow activation routes and license APIs themselves
   if (
     pathname.startsWith("/activate") ||
-    pathname.startsWith("/api/license")
+    pathname.startsWith("/api/health") ||
+    pathname.startsWith("/api/license") ||
+    pathname.startsWith("/register-business") ||
+    pathname.startsWith("/signup") ||
+    pathname.startsWith("/staff/keygen") ||
+    pathname.startsWith("/api/staff/keygen")
   ) {
     return NextResponse.next();
   }
@@ -46,8 +51,8 @@ export async function middleware(req: NextRequest) {
     if (!licRes.ok) return NextResponse.next();
     const j = (await licRes.json().catch(() => ({}))) as any;
 
-    // If licensed or actively on trial, allow through
-    if (j?.isLicensed || j?.trialActive || j?.canStartTrial) {
+    // Allow through only when license/trial is active.
+    if (j?.isLicensed || j?.trialActive) {
       return NextResponse.next();
     }
     // Else, redirect to /activate (but avoid loops)

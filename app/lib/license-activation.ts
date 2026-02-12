@@ -101,6 +101,107 @@ function isModernActivationShape(v: any): v is ActivationRecord {
   return v && typeof v === "object" && typeof v.mode === "string" && typeof v.updated_at === "string";
 }
 
+async function settingsHasBusinessId(client: any): Promise<boolean> {
+  try {
+    const rs = await client.query(
+      `SELECT EXISTS (
+         SELECT 1
+           FROM information_schema.columns
+          WHERE table_schema='public'
+            AND table_name='settings'
+            AND column_name='business_id'
+       ) AS has_business_id`
+    );
+    return Boolean(rs.rows?.[0]?.has_business_id);
+  } catch {
+    return false;
+  }
+}
+
+async function resolveActivationBusinessId(client: any): Promise<number> {
+  try {
+    const rs = await client.query(
+      `SELECT id
+         FROM businesses
+        WHERE is_active = TRUE
+        ORDER BY updated_at DESC NULLS LAST, id DESC
+        LIMIT 1`
+    );
+    const id = Number(rs.rows?.[0]?.id || 1);
+    return Number.isFinite(id) && id > 0 ? id : 1;
+  } catch {
+    return 1;
+  }
+}
+
+async function readActivationRaw(client: any, businessId: number, hasBusinessId: boolean) {
+  if (!hasBusinessId) {
+    const rs = await client.query(
+      `SELECT value_json
+         FROM settings
+        WHERE key='activation'
+        ORDER BY id DESC
+        LIMIT 1`
+    );
+    return rs.rows?.[0]?.value_json ?? null;
+  }
+
+  let rs = await client.query(
+    `SELECT value_json
+       FROM settings
+      WHERE key='activation'
+        AND business_id = $1
+      ORDER BY id DESC
+      LIMIT 1`,
+    [businessId]
+  );
+  if (!rs.rowCount) {
+    rs = await client.query(
+      `SELECT value_json
+         FROM settings
+        WHERE key='activation'
+        ORDER BY id DESC
+        LIMIT 1`
+    );
+  }
+  return rs.rows?.[0]?.value_json ?? null;
+}
+
+async function writeActivationRaw(client: any, raw: any, businessId: number, hasBusinessId: boolean) {
+  if (!hasBusinessId) {
+    await client.query(
+      `INSERT INTO settings (key, value_json)
+       VALUES ('activation', $1::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json`,
+      [JSON.stringify(raw)]
+    );
+    return;
+  }
+
+  const scoped = await client.query(
+    `UPDATE settings
+        SET value_json = $1::jsonb
+      WHERE key = 'activation'
+        AND business_id = $2`,
+    [JSON.stringify(raw), businessId]
+  );
+  if (scoped.rowCount) return;
+
+  const legacy = await client.query(
+    `UPDATE settings
+        SET value_json = $1::jsonb
+      WHERE key = 'activation'`,
+    [JSON.stringify(raw)]
+  );
+  if (legacy.rowCount) return;
+
+  await client.query(
+    `INSERT INTO settings (key, business_id, value_json)
+     VALUES ('activation', $1, $2::jsonb)`,
+    [businessId, JSON.stringify(raw)]
+  );
+}
+
 /** Coerce legacy (flat) or wrapped shapes into a modern ActivationRecord */
 function normalizeActivationShape(raw: any): ActivationRecord {
   if (!raw || typeof raw !== "object") return { ...DEFAULTS, updated_at: NOW_ISO() };
@@ -187,17 +288,9 @@ export function verifySignatureEd25519(
 export async function getActivationRecord(): Promise<ActivationRecord | null> {
   const client = await pool.connect();
   try {
-    const res = await client.query(
-      `SELECT value_json
-       FROM settings
-       WHERE key='activation'
-       ORDER BY id DESC
-       LIMIT 1`
-    );
-    const rows = (res as unknown as { rows: Array<{ value_json: any }> }).rows;
-    if (!rows || !rows[0]) return null;
-
-    const v = rows[0].value_json ?? null;
+    const hasBusinessId = await settingsHasBusinessId(client);
+    const businessId = hasBusinessId ? await resolveActivationBusinessId(client) : 1;
+    const v = await readActivationRaw(client, businessId, hasBusinessId);
     if (!v) return null;
 
     return normalizeActivationShape(v);
@@ -214,18 +307,14 @@ export async function getActivationRecord(): Promise<ActivationRecord | null> {
 export async function saveActivationRecord(patch: Partial<ActivationRecord>): Promise<ActivationRecord> {
   const client = await pool.connect();
   try {
+    const hasBusinessId = await settingsHasBusinessId(client);
+    const businessId = hasBusinessId ? await resolveActivationBusinessId(client) : 1;
+
     // Read current (tolerate legacy)
     const current = await (async () => {
-      const res = await client.query(
-        `SELECT value_json
-         FROM settings
-         WHERE key='activation'
-         ORDER BY id DESC
-         LIMIT 1`
-      );
-      const rows = (res as unknown as { rows: Array<{ value_json: any }> }).rows;
-      if (!rows || !rows[0]) return null;
-      return normalizeActivationShape(rows[0].value_json);
+      const raw = await readActivationRaw(client, businessId, hasBusinessId);
+      if (!raw) return null;
+      return normalizeActivationShape(raw);
     })();
 
     const merged: ActivationRecord = {
@@ -238,14 +327,7 @@ export async function saveActivationRecord(patch: Partial<ActivationRecord>): Pr
     const wrapper = { activation: merged };
 
     // Source of truth
-    await client.query(
-      `
-      INSERT INTO settings (key, value_json)
-      VALUES ('activation', $1::jsonb)
-      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json
-      `,
-      [JSON.stringify(wrapper)]
-    );
+    await writeActivationRaw(client, wrapper, businessId, hasBusinessId);
 
     // Legacy mirror (optional)
     await client.query(

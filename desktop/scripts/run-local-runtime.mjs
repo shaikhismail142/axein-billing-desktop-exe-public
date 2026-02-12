@@ -7,6 +7,8 @@ import fs from "node:fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const root = path.resolve(__dirname, "..", "..");
+const embeddedDataDir = path.join(root, "desktop", "runtime", "data", "pglite");
+fs.mkdirSync(embeddedDataDir, { recursive: true });
 
 const serverPath = path.join(root, "desktop", "runtime", "app", "standalone", "server.js");
 if (!fs.existsSync(serverPath)) {
@@ -21,6 +23,10 @@ const env = {
   APP_REQUIRE_BUSINESS_SETUP: process.env.APP_REQUIRE_BUSINESS_SETUP || "true",
   PORT: process.env.PORT || "3199",
   HOSTNAME: process.env.HOSTNAME || "127.0.0.1",
+  AXEIN_FORCE_EMBEDDED_DB: process.env.AXEIN_FORCE_EMBEDDED_DB || "1",
+  AXEIN_DB_DATA_DIR: process.env.AXEIN_DB_DATA_DIR || embeddedDataDir,
+  AXEIN_MIGRATIONS_DIR:
+    process.env.AXEIN_MIGRATIONS_DIR || path.join(path.dirname(serverPath), "db", "migrations"),
 };
 
 const child = spawn(process.execPath, [serverPath], {

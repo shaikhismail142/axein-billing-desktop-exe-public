@@ -170,12 +170,21 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
     let search_roots = runtime_search_roots(app, &resource_dir);
     let runtime_root = resolve_runtime_root(&search_roots)?;
     let server_js = runtime_root.join("server.js");
+    let migrations_dir = runtime_root.join("db").join("migrations");
 
     let log_dir = app
         .path()
         .app_log_dir()
         .map_err(|e| format!("Failed to resolve log dir: {e}"))?;
     fs::create_dir_all(&log_dir).map_err(|e| format!("Failed to create log dir: {e}"))?;
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+    fs::create_dir_all(&app_data_dir).map_err(|e| format!("Failed to create app data dir: {e}"))?;
+    let db_data_dir = app_data_dir.join("db");
+    fs::create_dir_all(&db_data_dir).map_err(|e| format!("Failed to create db data dir: {e}"))?;
 
     let stdout_log = OpenOptions::new()
         .create(true)
@@ -200,6 +209,9 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .env("HOSTNAME", RUNTIME_HOST)
         .env("AXEIN_DESKTOP", "1")
         .env("APP_REQUIRE_BUSINESS_SETUP", "true")
+        .env("AXEIN_FORCE_EMBEDDED_DB", "1")
+        .env("AXEIN_DB_DATA_DIR", &db_data_dir)
+        .env("AXEIN_MIGRATIONS_DIR", &migrations_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_log))
         .stderr(Stdio::from(stderr_log));

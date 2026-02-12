@@ -60,7 +60,7 @@ export default function AppHeader() {
               <NavLink href="/invoices" label="Invoices" />
               <NavLink href="/reports" label="Reports" />
               <NavLink href="/accounting" label="Accounting" />
-              <NavLink href="/settings" label="Settings" />
+              <NavLink href="/profile" label="Profile" />
             </nav>
 
             {/* Quick Billing (glassy too; NOT blue; correct URL) */}
@@ -105,7 +105,7 @@ export default function AppHeader() {
                 <NavLink href="/invoices" label="Invoices" />
                 <NavLink href="/reports" label="Reports" />
                 <NavLink href="/accounting" label="Accounting" />
-                <NavLink href="/settings" label="Settings" />
+                <NavLink href="/profile" label="Profile" />
               </div>
             </nav>
           )}

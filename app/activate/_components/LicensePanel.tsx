@@ -58,7 +58,7 @@ export default function LicensePanel({
     setLoading(true);
     setMsg(null);
     try {
-      const r = await fetch(`/api/license/status`, { cache: 'no-store' });
+      const r = await fetch(`/api/license/status`, { cache: 'no-store', headers: { 'x-admin': '1' } });
       const j = (await r.json()) as LicenseStatus;
       setStatus(j);
     } catch (e: any) {
@@ -111,7 +111,7 @@ export default function LicensePanel({
     setTrialBusy(true);
     setMsg(null);
     try {
-      const r = await fetch(`/api/license/start-trial`, { method: 'POST' });
+      const r = await fetch(`/api/license/start-trial`, { method: 'POST', headers: { 'x-admin': '1' } });
       const j = (await r.json()) as any;
       if (!j.ok) throw new Error(j.error || 'Failed to start trial');
       setMsg({ type: 'success', text: 'Trial started successfully.' });
@@ -159,7 +159,7 @@ export default function LicensePanel({
 
       const r = await fetch(`/api/license/verify-key`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-admin': '1' },
         body: JSON.stringify(body),
       });
       const j = (await r.json()) as any;

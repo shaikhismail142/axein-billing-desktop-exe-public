@@ -1,50 +1,37 @@
 'use client';
 
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useState,
-  useCallback,
-} from 'react';
+import React, { createContext, useContext, useLayoutEffect, useMemo, useState, useCallback } from 'react';
 
 type Theme = 'light' | 'dark';
-type Mode  = 'system' | Theme;
+type Mode = 'system' | Theme;
+type ColorTheme = 'blue' | 'green' | 'amber' | 'rose';
 
 type Ctx = {
-  /** Back-compat alias for resolved theme */
   theme: Theme;
-  /** What is actually applied to the UI */
   resolvedTheme: Theme;
-  /** User preference: 'system' | 'light' | 'dark' */
   mode: Mode;
-  /** Set mode; accepts 'system' | 'light' | 'dark' */
   setTheme: (m: Mode) => void;
-  /** Convenience: toggles between light/dark (sets explicit mode, not system) */
   toggle: () => void;
 };
 
 const ThemeCtx = createContext<Ctx | null>(null);
 
-// Storage keys (new + legacy)
-const LS_MODE_KEY = 'axein_theme_mode';   // 'system' | 'light' | 'dark'
-const LS_OLD_KEY  = 'axein_theme';        // legacy: 'light' | 'dark'
+const LS_MODE_KEY = 'axein_theme_mode';
+const LS_OLD_KEY = 'axein_theme';
+const LS_COLOR_THEME_KEY = 'axein_color_theme';
 
-function getSystemTheme(): Theme {
-  if (typeof window === 'undefined') return 'light';
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+function readColorTheme(): ColorTheme {
+  try {
+    const raw = localStorage.getItem(LS_COLOR_THEME_KEY);
+    if (raw === 'green' || raw === 'amber' || raw === 'rose' || raw === 'blue') return raw;
+  } catch {
+    // ignore
+  }
+  return 'blue';
 }
 
-function readPreferredMode(): Mode {
-  try {
-    const m = localStorage.getItem(LS_MODE_KEY) as Mode | null;
-    if (m === 'system' || m === 'light' || m === 'dark') return m;
-    const legacy = localStorage.getItem(LS_OLD_KEY) as Theme | null;
-    if (legacy === 'light' || legacy === 'dark') return legacy;
-  } catch { /* ignore */ }
-  return 'system';
+function applyColorTheme(theme: ColorTheme) {
+  document.documentElement.setAttribute('data-color-theme', theme);
 }
 
 function ensureColorSchemeMeta() {
@@ -57,66 +44,44 @@ function ensureColorSchemeMeta() {
   return meta;
 }
 
-function applyResolvedTheme(t: Theme) {
+function applyResolvedTheme(): void {
   const html = document.documentElement;
-  html.classList.toggle('dark', t === 'dark');
-  html.setAttribute('data-theme', t);
+  html.classList.remove('dark');
+  html.setAttribute('data-theme', 'light');
   const meta = ensureColorSchemeMeta();
-  meta.setAttribute('content', 'light dark');
+  meta.setAttribute('content', 'light');
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mode, setMode] = useState<Mode>('system');
+  const [mode, setMode] = useState<Mode>('light');
   const [resolvedTheme, setResolvedTheme] = useState<Theme>('light');
 
-  // Pre-paint: avoid FOUC
   useLayoutEffect(() => {
-    const initialMode = readPreferredMode();
-    const resolved = initialMode === 'system' ? getSystemTheme() : initialMode;
-    applyResolvedTheme(resolved);
-    setMode(initialMode);
-    setResolvedTheme(resolved);
+    applyResolvedTheme();
+    applyColorTheme(readColorTheme());
+    setMode('light');
+    setResolvedTheme('light');
   }, []);
 
-  // Track OS changes only in system mode
-  useEffect(() => {
-    if (mode !== 'system') return;
-    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
-    if (!mq) return;
-    const onChange = () => {
-      const next = mq.matches ? 'dark' : 'light';
-      applyResolvedTheme(next);
-      setResolvedTheme(next);
-    };
-    mq.addEventListener?.('change', onChange);
-    return () => mq.removeEventListener?.('change', onChange);
-  }, [mode]);
-
-  const setTheme = useCallback((m: Mode) => {
+  const setTheme = useCallback((_: Mode) => {
     try {
-      localStorage.setItem(LS_MODE_KEY, m);
+      localStorage.setItem(LS_MODE_KEY, 'light');
       localStorage.removeItem(LS_OLD_KEY);
-    } catch { /* ignore */ }
-
-    if (m === 'system') {
-      const sys = getSystemTheme();
-      applyResolvedTheme(sys);
-      setMode('system');
-      setResolvedTheme(sys);
-    } else {
-      applyResolvedTheme(m);
-      setMode(m);
-      setResolvedTheme(m);
+    } catch {
+      // ignore
     }
+    applyResolvedTheme();
+    setMode('light');
+    setResolvedTheme('light');
   }, []);
 
   const toggle = useCallback(() => {
-    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
-  }, [resolvedTheme, setTheme]);
+    setTheme('light');
+  }, [setTheme]);
 
   const value = useMemo<Ctx>(
     () => ({
-      theme: resolvedTheme,       // back-compat
+      theme: resolvedTheme,
       resolvedTheme,
       mode,
       setTheme,

@@ -10,13 +10,22 @@ const root = path.resolve(__dirname, "..", "..");
 
 const standaloneSrc = path.join(root, ".next", "standalone");
 const staticSrc = path.join(root, ".next", "static");
+const serverChunksMediaSrc = path.join(root, ".next", "server", "chunks", "static", "media");
 const publicSrc = path.join(root, "public");
+const migrationsSrc = path.join(root, "db", "migrations");
+const pgliteDistSrc = path.join(root, "node_modules", "@electric-sql", "pglite", "dist");
+const keygenPrivateKeySrc = path.join(root, "tools", "license-keygen", "ed25519-private.pem");
 
 const runtimeRoot = path.join(root, "desktop", "runtime");
 const appRoot = path.join(runtimeRoot, "app");
 const standaloneDst = path.join(appRoot, "standalone");
 const staticDst = path.join(standaloneDst, ".next", "static");
+const serverChunksMediaDst = path.join(standaloneDst, ".next", "server", "chunks", "static", "media");
 const publicDst = path.join(standaloneDst, "public");
+const migrationsDst = path.join(standaloneDst, "db", "migrations");
+const pgliteDistDst = path.join(standaloneDst, "vendor", "pglite", "dist");
+const pglitePkgDst = path.join(standaloneDst, "vendor", "pglite", "package.json");
+const keygenPrivateKeyDst = path.join(standaloneDst, "vendor", "keygen", "ed25519-private.pem");
 
 async function exists(p) {
   try {
@@ -46,8 +55,38 @@ async function main() {
     await copyDir(staticSrc, staticDst);
   }
 
+  if (await exists(serverChunksMediaSrc)) {
+    await copyDir(serverChunksMediaSrc, serverChunksMediaDst);
+  }
+
   if (await exists(publicSrc)) {
     await copyDir(publicSrc, publicDst);
+  }
+
+  if (await exists(migrationsSrc)) {
+    await copyDir(migrationsSrc, migrationsDst);
+  }
+
+  if (await exists(pgliteDistSrc)) {
+    await copyDir(pgliteDistSrc, pgliteDistDst);
+    await fs.writeFile(
+      pglitePkgDst,
+      JSON.stringify(
+        {
+          name: "@axein/pglite-runtime",
+          private: true,
+          type: "module",
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+  }
+
+  if (process.env.AXEIN_INCLUDE_KEYGEN_PRIVATE === "1" && (await exists(keygenPrivateKeySrc))) {
+    await fs.mkdir(path.dirname(keygenPrivateKeyDst), { recursive: true });
+    await fs.copyFile(keygenPrivateKeySrc, keygenPrivateKeyDst);
   }
 
   const readme = [

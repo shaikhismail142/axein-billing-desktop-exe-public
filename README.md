@@ -16,6 +16,11 @@ npm run desktop:bundle-node
 npm run desktop:build
 ```
 
+## Staff keygen desktop build
+```bash
+npm run desktop:keygen:build
+```
+
 ## QA and operations
 ```bash
 npm run desktop:runtime:start

@@ -76,7 +76,10 @@ export default function ProfileUsersPage() {
   const [selectedRolePermCodes, setSelectedRolePermCodes] = useState<string[]>([]);
 
   const loadPendingUsers = useCallback(async () => {
-    const res = await fetch("/api/admin/users/pending", { cache: "no-store" });
+    const res = await fetch("/api/admin/users/pending", {
+      cache: "no-store",
+      headers: { "x-admin": "1" },
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Failed to load pending users");
     const list = Array.isArray(data?.items) ? data.items : [];
@@ -90,7 +93,10 @@ export default function ProfileUsersPage() {
   }, []);
 
   const loadUsers = useCallback(async () => {
-    const res = await fetch("/api/admin/users", { cache: "no-store" });
+    const res = await fetch("/api/admin/users", {
+      cache: "no-store",
+      headers: { "x-admin": "1" },
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Failed to load users");
     setUsers(Array.isArray(data?.items) ? data.items : []);
@@ -98,7 +104,10 @@ export default function ProfileUsersPage() {
   }, []);
 
   const loadRolesAndPermissions = useCallback(async () => {
-    const res = await fetch("/api/admin/rbac/roles", { cache: "no-store" });
+    const res = await fetch("/api/admin/rbac/roles", {
+      cache: "no-store",
+      headers: { "x-admin": "1" },
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Failed to load role permissions");
 
@@ -151,7 +160,7 @@ export default function ProfileUsersPage() {
     try {
       const res = await fetch(`/api/admin/users/${userId}/approve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-admin": "1" },
         body: JSON.stringify({ role_codes: [roleCode] }),
       });
       const data = await res.json().catch(() => ({}));
@@ -172,6 +181,7 @@ export default function ProfileUsersPage() {
     try {
       const res = await fetch(`/api/admin/users/${userId}/reject`, {
         method: "POST",
+        headers: { "x-admin": "1" },
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Rejection failed");

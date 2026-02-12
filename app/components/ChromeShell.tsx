@@ -7,7 +7,6 @@ import SiteFooter from "@/components/SiteFooter";
 import ClientShell from "@/components/ClientShell";
 import LicenseBanner from "@/app/_components/LicenseBanner";
 import AlertsBell from "@/app/_components/AlertsBell";
-import ThemeToggle from "@/app/_components/ThemeToggle";
 
 const PRINT_ROUTE_PREFIXES = [
   "/reports/tax/print",
@@ -41,7 +40,7 @@ export default function ChromeShell({ children }: { children: React.ReactNode })
         <AppHeader />
       </div>
 
-      {/* Top-right tray: Theme + Alerts */}
+      {/* Top-right tray: Alerts */}
       <div
         className="fixed z-[70] top-3 right-3 sm:top-4 sm:right-4 pointer-events-none"
         style={
@@ -54,9 +53,6 @@ export default function ChromeShell({ children }: { children: React.ReactNode })
         role="region"
       >
         <div className="flex items-center gap-3">
-          <div className="pointer-events-auto">
-            <ThemeToggle />
-          </div>
           <div className="pointer-events-auto">
             <AlertsBell />
           </div>

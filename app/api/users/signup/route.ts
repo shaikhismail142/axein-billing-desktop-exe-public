@@ -34,45 +34,76 @@ export async function POST(req: Request) {
   const client = await pool.connect();
   let txStarted = false;
   try {
+    const debug = process.env.AXEIN_DEBUG_SIGNUP === "1";
     let businessId = Number(body.business_id || 0);
+    const businessCode = String(body.business_code || "").trim().toLowerCase();
+
+    const businessesRs = await client.query(
+      `SELECT id, code, is_active
+         FROM businesses
+        ORDER BY id ASC`
+    );
+    const businesses = (businessesRs.rows || [])
+      .map((row) => ({
+        id: Number(row.id || 0),
+        code: String(row.code || "").trim().toLowerCase(),
+        isActive: row.is_active !== false,
+      }))
+      .filter((row) => Number.isFinite(row.id) && row.id > 0);
+    const activeBusinesses = businesses.filter((row) => row.isActive);
     let businessFound = false;
 
+    if (debug) {
+      console.warn("[signup] resolve input", {
+        businessId,
+        businessCode,
+        businesses: businesses.map((row) => ({ id: row.id, code: row.code, isActive: row.isActive })),
+      });
+    }
+
     if (Number.isFinite(businessId) && businessId > 0) {
-      const byIdRs = await client.query(
-        `SELECT id
-           FROM businesses
-          WHERE id = $1
-            AND is_active = TRUE
-          LIMIT 1`,
-        [businessId]
-      );
-      if (byIdRs.rowCount > 0) {
+      const byId = businesses.find((row) => row.id === businessId);
+      if (byId?.isActive) {
         businessFound = true;
       }
-    } else {
-      const code = String(body.business_code || "").trim().toLowerCase();
-      if (!code) {
-        return NextResponse.json(
-          { error: "business_id or business_code is required" },
-          { status: 400 }
-        );
-      }
-      const byCodeRs = await client.query(
-        `SELECT id
-           FROM businesses
-          WHERE lower(code) = $1
-            AND is_active = TRUE
-          LIMIT 1`,
-        [code]
-      );
-      if (byCodeRs.rowCount > 0) {
-        businessId = Number(byCodeRs.rows[0].id);
+    } else if (businessCode) {
+      const byCode = activeBusinesses.find((row) => row.code && row.code === businessCode);
+      if (byCode) {
+        businessId = byCode.id;
         businessFound = true;
       }
     }
 
+    if (!businessFound && activeBusinesses.length === 1) {
+      businessId = activeBusinesses[0].id;
+      businessFound = true;
+    }
+
     if (!businessFound || !Number.isFinite(businessId) || businessId <= 0) {
-      return NextResponse.json({ error: "Business not found" }, { status: 404 });
+      if (debug) {
+        console.warn("[signup] business resolution failed", { businessId, businessCode, activeCount: activeBusinesses.length });
+      }
+      return NextResponse.json(
+        {
+          error: "Business not found",
+          ...(debug
+            ? {
+                debug: {
+                  business_id: Number(body.business_id || 0),
+                  business_code: businessCode || null,
+                  resolved_business_id: businessId,
+                  active_businesses: activeBusinesses.map((row) => ({ id: row.id, code: row.code })),
+                  all_businesses: businesses.map((row) => ({
+                    id: row.id,
+                    code: row.code,
+                    is_active: row.isActive,
+                  })),
+                },
+              }
+            : {}),
+        },
+        { status: 404 }
+      );
     }
 
     const seatUsage = await resolveSeatUsage(client, businessId);

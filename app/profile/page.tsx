@@ -34,6 +34,11 @@ const cards = [
     title: "Diagnostics Logs",
     desc: "View and download logs for sharing with AxEin support when issues occur.",
   },
+  {
+    href: "/staff/keygen",
+    title: "Staff Keygen",
+    desc: "AxEin staff-only license key generation for new and extension licenses.",
+  },
 ];
 
 export default function ProfilePage() {

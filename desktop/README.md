@@ -19,4 +19,5 @@ npm run desktop:lan:selftest
 npm run desktop:smoke
 npm run desktop:build
 npm run desktop:release:metadata
+npm run desktop:keygen:build
 ```
