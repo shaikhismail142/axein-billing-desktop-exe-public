@@ -40,6 +40,7 @@ fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
 fn runtime_search_roots(app: &tauri::AppHandle, resource_dir: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::<PathBuf>::new();
     push_unique_path(&mut roots, resource_dir.to_path_buf());
+    push_unique_path(&mut roots, resource_dir.join("_up_"));
 
     if let Ok(path) = std::env::var("AXEIN_RUNTIME_ROOT") {
         let custom = PathBuf::from(path);
@@ -50,9 +51,13 @@ fn runtime_search_roots(app: &tauri::AppHandle, resource_dir: &Path) -> Vec<Path
 
     if let Ok(executable_dir) = app.path().executable_dir() {
         push_unique_path(&mut roots, executable_dir.clone());
+        push_unique_path(&mut roots, executable_dir.join("_up_"));
         push_unique_path(&mut roots, executable_dir.join("resources"));
+        push_unique_path(&mut roots, executable_dir.join("_up_").join("resources"));
         if let Some(parent) = executable_dir.parent() {
             push_unique_path(&mut roots, parent.join("resources"));
+            push_unique_path(&mut roots, parent.join("_up_"));
+            push_unique_path(&mut roots, parent.join("_up_").join("resources"));
         }
     }
 
