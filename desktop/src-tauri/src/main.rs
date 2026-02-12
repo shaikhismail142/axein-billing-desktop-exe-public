@@ -74,9 +74,9 @@ fn resolve_runtime_root(resource_dir: &Path) -> Result<PathBuf, String> {
         resource_dir.join("app").join("standalone"),
     ];
 
-    for candidate in candidates {
+    for candidate in &candidates {
         if candidate.join("server.js").exists() {
-            return Ok(candidate);
+            return Ok(candidate.to_path_buf());
         }
     }
 
