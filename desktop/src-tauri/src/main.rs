@@ -31,7 +31,35 @@ fn runtime_healthy() -> bool {
     TcpStream::connect((RUNTIME_HOST, DESKTOP_PORT)).is_ok()
 }
 
-fn resolve_node_binary(resource_dir: &Path) -> PathBuf {
+fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !paths.iter().any(|existing| existing == &candidate) {
+        paths.push(candidate);
+    }
+}
+
+fn runtime_search_roots(app: &tauri::AppHandle, resource_dir: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::<PathBuf>::new();
+    push_unique_path(&mut roots, resource_dir.to_path_buf());
+
+    if let Ok(path) = std::env::var("AXEIN_RUNTIME_ROOT") {
+        let custom = PathBuf::from(path);
+        if custom.exists() {
+            push_unique_path(&mut roots, custom);
+        }
+    }
+
+    if let Ok(executable_dir) = app.path().executable_dir() {
+        push_unique_path(&mut roots, executable_dir.clone());
+        push_unique_path(&mut roots, executable_dir.join("resources"));
+        if let Some(parent) = executable_dir.parent() {
+            push_unique_path(&mut roots, parent.join("resources"));
+        }
+    }
+
+    roots
+}
+
+fn resolve_node_binary(search_roots: &[PathBuf]) -> PathBuf {
     if let Ok(path) = std::env::var("AXEIN_NODE_BIN") {
         let custom = PathBuf::from(path);
         if custom.exists() {
@@ -41,13 +69,16 @@ fn resolve_node_binary(resource_dir: &Path) -> PathBuf {
 
     #[cfg(target_os = "windows")]
     {
-        let bundled_candidates = [
-            resource_dir.join("runtime").join("node").join("node.exe"),
-            resource_dir.join("node").join("node.exe"),
-        ];
-        for bundled in bundled_candidates {
-            if bundled.exists() {
-                return bundled;
+        for root in search_roots {
+            let bundled_candidates = [
+                root.join("runtime").join("node").join("node.exe"),
+                root.join("node").join("node.exe"),
+                root.join("node.exe"),
+            ];
+            for bundled in bundled_candidates {
+                if bundled.exists() {
+                    return bundled;
+                }
             }
         }
         return PathBuf::from("node.exe");
@@ -55,40 +86,44 @@ fn resolve_node_binary(resource_dir: &Path) -> PathBuf {
 
     #[cfg(not(target_os = "windows"))]
     {
-        let bundled_candidates = [
-            resource_dir.join("runtime").join("node").join("node"),
-            resource_dir.join("node").join("node"),
-        ];
-        for bundled in bundled_candidates {
-            if bundled.exists() {
-                return bundled;
+        for root in search_roots {
+            let bundled_candidates = [
+                root.join("runtime").join("node").join("node"),
+                root.join("node").join("node"),
+                root.join("node"),
+            ];
+            for bundled in bundled_candidates {
+                if bundled.exists() {
+                    return bundled;
+                }
             }
         }
         PathBuf::from("node")
     }
 }
 
-fn resolve_runtime_root(resource_dir: &Path) -> Result<PathBuf, String> {
-    let candidates = [
-        resource_dir.join("runtime").join("app").join("standalone"),
-        resource_dir.join("app").join("standalone"),
-    ];
+fn resolve_runtime_root(search_roots: &[PathBuf]) -> Result<PathBuf, String> {
+    let mut tried = Vec::<String>::new();
 
-    for candidate in &candidates {
-        if candidate.join("server.js").exists() {
-            return Ok(candidate.to_path_buf());
+    for root in search_roots {
+        let candidates = [
+            root.join("runtime").join("app").join("standalone"),
+            root.join("app").join("standalone"),
+            root.join("standalone"),
+        ];
+
+        for candidate in candidates {
+            let server_js = candidate.join("server.js");
+            tried.push(server_js.to_string_lossy().to_string());
+            if server_js.exists() {
+                return Ok(candidate);
+            }
         }
     }
 
-    let tried = candidates
-        .iter()
-        .map(|candidate| candidate.join("server.js").to_string_lossy().to_string())
-        .collect::<Vec<_>>()
-        .join("; ");
-
     Err(format!(
         "Desktop runtime missing server.js. Looked at: {}",
-        tried
+        tried.join("; ")
     ))
 }
 
@@ -127,7 +162,8 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .resource_dir()
         .map_err(|e| format!("Failed to resolve resource dir: {e}"))?;
 
-    let runtime_root = resolve_runtime_root(&resource_dir)?;
+    let search_roots = runtime_search_roots(app, &resource_dir);
+    let runtime_root = resolve_runtime_root(&search_roots)?;
     let server_js = runtime_root.join("server.js");
 
     let log_dir = app
@@ -147,7 +183,8 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .open(log_dir.join("runtime.stderr.log"))
         .map_err(|e| format!("Failed to open runtime stderr log: {e}"))?;
 
-    let node_bin = resolve_node_binary(&resource_dir);
+    let node_bin = resolve_node_binary(&search_roots);
+    let node_bin_for_err = node_bin.clone();
 
     let mut command = Command::new(node_bin);
     command
@@ -178,7 +215,7 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
 
     let child = command
         .spawn()
-        .map_err(|e| format!("Failed to start local runtime: {e}"))?;
+        .map_err(|e| format!("Failed to start local runtime with {:?}: {e}", node_bin_for_err))?;
 
     {
         let state = app.state::<RuntimeState>();
