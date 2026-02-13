@@ -15,6 +15,7 @@
     "desktop:bundle-node": "node ./desktop/scripts/prepare-node-runtime.mjs",
     "desktop:lan:selftest": "node ./desktop/scripts/lan-security-selftest.mjs",
     "desktop:smoke": "node ./desktop/scripts/smoke-test-runtime.mjs",
+    "desktop:keygen:selftest": "node ./desktop/scripts/keygen-selftest.mjs",
     "desktop:db:migrate": "node ./desktop/scripts/apply-migrations.mjs",
     "desktop:release:metadata": "node ./desktop/scripts/release-metadata.mjs",
     "desktop:release:verify": "node ./desktop/scripts/verify-windows-installer.mjs",

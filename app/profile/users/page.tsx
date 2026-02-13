@@ -258,6 +258,33 @@ export default function ProfileUsersPage() {
     }
   }
 
+  async function resetPasswordForUser(user: BusinessUser) {
+    const password = window.prompt(`Set new password for ${user.email} (min 6 chars):`, "");
+    if (!password) return;
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setOk(null);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin": "1" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to reset password");
+      setOk(`Password reset for ${user.email}`);
+    } catch (e: any) {
+      setError(String(e?.message || "Failed to reset password"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="container">
       <div className="card" style={{ padding: 16 }}>
@@ -440,6 +467,7 @@ export default function ProfileUsersPage() {
                 <th>Status</th>
                 <th>Roles</th>
                 <th>Created</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -454,11 +482,16 @@ export default function ProfileUsersPage() {
                       : "-"}
                   </td>
                   <td>{new Date(user.created_at).toLocaleString()}</td>
+                  <td>
+                    <button className="btn" disabled={saving} onClick={() => resetPasswordForUser(user)}>
+                      Reset Password
+                    </button>
+                  </td>
                 </tr>
               ))}
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={6} className="muted">
                     No users found.
                   </td>
                 </tr>

@@ -23,9 +23,11 @@ npm run desktop:web:build
 npm run desktop:prepare-runtime
 npm run desktop:smoke
 npm run desktop:lan:selftest
+npm run desktop:keygen:selftest
 ```
 
 The smoke test runs the desktop runtime with embedded local DB mode, so Postgres is not required for first-run validation.
+`desktop:keygen:selftest` validates keygen-mode routing and staff key endpoint behavior on local runtime.
 
 ## Staff keygen desktop build
 ```bash
@@ -38,6 +40,13 @@ Super password handling:
 - Preferred: set `AXEIN_SUPER_KEYGEN_PASSWORD` before building keygen.
 - Current fallback (internal use): `AxEin!K3yG3n#2026@Sup3r-Only`
 - Production recommendation: override fallback before any public/customer rollout.
+
+## First-run flow (customer app)
+- Launch app -> `/activate`
+- Validate license key or start 7-day trial
+- Register business + owner
+- Owner account is auto-signed-in, then app opens dashboard
+- Other users use `/signup`, and admin approves from `Profile > Users`
 
 ## QA and operations
 ```bash
@@ -53,11 +62,13 @@ npm run desktop:release:metadata
 - Use GitHub Action `Desktop Windows Release` to generate and upload both installers:
   - `AxEin Billing Desktop_*_setup.exe`
   - `AxEin License Keygen_*_setup.exe`
+- On installed machines, discover launch binaries from install folders with `Get-ChildItem ... -Recurse -Filter *.exe` instead of hardcoding file names.
 
 ## Documentation
 - `/Users/nadiya/Downloads/Axein-Billing-Exe/axein-billing-desktop-exe/docs/desktop-build-windows.md`
 - `/Users/nadiya/Downloads/Axein-Billing-Exe/axein-billing-desktop-exe/docs/desktop-rebuild-blueprint.md`
 - `/Users/nadiya/Downloads/Axein-Billing-Exe/axein-billing-desktop-exe/docs/phase-2-desktop-status.md`
+- `/Users/nadiya/Downloads/Axein-Billing-Exe/axein-billing-desktop-exe/docs/post-install-troubleshooting.md`
 
 ## Repo layout
 - `app/`: Next.js product UI and APIs.

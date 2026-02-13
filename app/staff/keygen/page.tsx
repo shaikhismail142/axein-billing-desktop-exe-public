@@ -1,14 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { notFound } from "next/navigation";
-
-export default function StaffKeygenPageWrapper() {
-  if (process.env.AXEIN_INCLUDE_KEYGEN_UI !== "1") {
-    notFound();
-  }
-  return <StaffKeygenPage />;
-}
 
 type KeygenForm = {
   super_password: string;
@@ -67,11 +59,12 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
-function StaffKeygenPage() {
+export default function StaffKeygenPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [result, setResult] = useState<KeygenResponse | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
 
   const [form, setForm] = useState<KeygenForm>({
     super_password: "",
@@ -136,14 +129,43 @@ function StaffKeygenPage() {
     }
   }
 
+  function unlockForm(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!form.super_password.trim()) {
+      setError("Enter super password to continue.");
+      return;
+    }
+    setUnlocked(true);
+  }
+
   return (
-    <div className="container">
-      <div className="card" style={{ padding: 16, maxWidth: 1100, margin: "0 auto" }}>
+    <div className="container" style={{ maxWidth: 1100, margin: "24px auto" }}>
+      <div className="card" style={{ padding: 18 }}>
         <h1 style={{ margin: 0 }}>AxEin Staff Keygen</h1>
         <p className="muted" style={{ marginTop: 8 }}>
           Staff-only license generator. Use super password, set user/computer limits, and issue tokens for activation or extension.
         </p>
 
+        {!unlocked ? (
+          <form onSubmit={unlockForm} style={{ marginTop: 14, display: "grid", gap: 12, maxWidth: 420 }}>
+            <label>
+              <div className="muted">Super Password</div>
+              <input
+                className="input"
+                type="password"
+                value={form.super_password}
+                onChange={(e) => update("super_password", e.target.value)}
+                autoFocus
+                required
+              />
+            </label>
+            {error ? <div style={{ color: "var(--danger)" }}>{error}</div> : null}
+            <div>
+              <button className="btn" type="submit">Continue</button>
+            </div>
+          </form>
+        ) : (
         <form onSubmit={submit} style={{ marginTop: 14, display: "grid", gap: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
             <label>
@@ -152,16 +174,6 @@ function StaffKeygenPage() {
                 <option value="new">New License</option>
                 <option value="extend">Extend Existing License</option>
               </select>
-            </label>
-            <label>
-              <div className="muted">Super Password</div>
-              <input
-                className="input"
-                type="password"
-                value={form.super_password}
-                onChange={(e) => update("super_password", e.target.value)}
-                required
-              />
             </label>
             <label>
               <div className="muted">Customer Email</div>
@@ -261,9 +273,20 @@ function StaffKeygenPage() {
             <button className="btn" type="submit" disabled={busy}>
               {busy ? "Generating..." : "Generate License Key"}
             </button>
-            <a className="btn" href="/register-business">Go To Registration</a>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                setUnlocked(false);
+                setOk(null);
+                setError(null);
+              }}
+            >
+              Lock
+            </button>
           </div>
         </form>
+        )}
 
         {result?.ok ? (
           <div className="card" style={{ marginTop: 14, padding: 12 }}>

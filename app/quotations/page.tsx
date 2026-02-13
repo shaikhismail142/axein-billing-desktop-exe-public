@@ -1,5 +1,6 @@
 // app/quotations/page.tsx
 import Link from "next/link";
+import { headers } from "next/headers";
 import { SelectionProvider } from "./_components/selection";
 import { MasterCheckbox, RowCheckbox } from "./_components/checks";
 import BulkTray from "./_components/BulkTray";
@@ -27,8 +28,15 @@ const fmtINR = (n: number) => {
   return `INR (Rs/-) ${x}.${parts[1]}`;
 };
 
-async function fetchRows(q: string, page: number, perPage: number) {
-  const url = new URL(`${process.env.NEXT_PUBLIC_BASE_URL}/api/quotations`);
+function resolveBaseUrl() {
+  const h = headers();
+  const host = h.get("x-forwarded-host") || h.get("host") || "127.0.0.1:3199";
+  const proto = h.get("x-forwarded-proto") || (host.includes("localhost") || host.startsWith("127.") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+async function fetchRows(baseUrl: string, q: string, page: number, perPage: number) {
+  const url = new URL("/api/quotations", baseUrl);
   if (q) url.searchParams.set("q", q);
   url.searchParams.set("page", String(page));
   url.searchParams.set("perPage", String(perPage));
@@ -49,7 +57,8 @@ export default async function Page({ searchParams }: { searchParams: { q?: strin
   const q = (searchParams?.q ?? "").trim();
   const page = Math.max(1, Number(searchParams?.page || 1));
   const perPage = Math.min(200, Math.max(1, Number(searchParams?.perPage || 20)));
-  const { rows, error, total, totalPages } = await fetchRows(q, page, perPage);
+  const baseUrl = resolveBaseUrl();
+  const { rows, error, total, totalPages } = await fetchRows(baseUrl, q, page, perPage);
   const pageIds = rows.map((r) => r.id);
 
   return (

@@ -8,11 +8,7 @@ const NO_STORE_HEADERS = {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-
-  const keygenEnabled = process.env.AXEIN_INCLUDE_KEYGEN_UI === "1";
-  if (!keygenEnabled && (pathname.startsWith("/staff/keygen") || pathname.startsWith("/api/staff/keygen"))) {
-    return new NextResponse("Not Found", { status: 404 });
-  }
+  const keygenMode = process.env.AXEIN_INCLUDE_KEYGEN_UI === "1";
 
   // Allow static and public assets without checks
   if (
@@ -29,13 +25,33 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
+  // In customer billing runtime, staff keygen UI must stay inaccessible.
+  if (!keygenMode && pathname.startsWith("/staff/keygen")) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/activate";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // In staff keygen runtime, force all page navigation into keygen screen.
+  if (keygenMode && !pathname.startsWith("/staff/keygen")) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/staff/keygen";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   // Allow activation routes and license APIs themselves
   if (
     pathname.startsWith("/activate") ||
-    pathname.startsWith("/api/health") ||
-    pathname.startsWith("/api/license") ||
     pathname.startsWith("/register-business") ||
-    pathname.startsWith("/signup")
+    pathname.startsWith("/signup") ||
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/staff/keygen")
   ) {
     return NextResponse.next();
   }
@@ -54,17 +70,37 @@ export async function middleware(req: NextRequest) {
     if (!licRes.ok) return NextResponse.next();
     const j = (await licRes.json().catch(() => ({}))) as any;
 
-    // Allow through only when license/trial is active.
-    if (j?.isLicensed || j?.trialActive) {
-      return NextResponse.next();
-    }
-    // Else, redirect to /activate (but avoid loops)
-    if (!pathname.startsWith("/activate")) {
+    const activated = Boolean(j?.isLicensed || j?.trialActive);
+    if (!activated) {
       const url = req.nextUrl.clone();
       url.pathname = "/activate";
       url.search = "";
       return NextResponse.redirect(url);
     }
+
+    // For activated business pages, require user login session.
+    const authURL = req.nextUrl.clone();
+    authURL.pathname = "/api/auth/session";
+    authURL.search = "";
+    const authRes = await fetch(authURL, {
+      cache: "no-store",
+      headers: {
+        ...NO_STORE_HEADERS,
+        cookie: req.headers.get("cookie") || "",
+      } as any,
+    });
+    if (authRes.ok) {
+      const auth = (await authRes.json().catch(() => ({}))) as any;
+      if (auth?.authenticated) {
+        return NextResponse.next();
+      }
+
+      const loginURL = req.nextUrl.clone();
+      loginURL.pathname = "/login";
+      loginURL.search = "";
+      return NextResponse.redirect(loginURL);
+    }
+
     return NextResponse.next();
   } catch {
     // Fail open if status endpoint fails (prevents hard lockouts)

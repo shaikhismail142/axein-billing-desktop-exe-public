@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::net::TcpStream;
@@ -171,11 +173,13 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
     let runtime_root = resolve_runtime_root(&search_roots)?;
     let server_js = runtime_root.join("server.js");
     let migrations_dir = runtime_root.join("db").join("migrations");
-    let keygen_mode = runtime_root.join(".axein-keygen-runtime").exists();
     let keygen_private_key = runtime_root
         .join("vendor")
         .join("keygen")
         .join("ed25519-private.pem");
+    let keygen_mode = runtime_root.join(".axein-keygen-runtime").exists()
+        || runtime_root.join("AXEIN_KEYGEN_RUNTIME.flag").exists()
+        || keygen_private_key.exists();
 
     let log_dir = app
         .path()
@@ -222,7 +226,7 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .stdout(Stdio::from(stdout_log))
         .stderr(Stdio::from(stderr_log));
 
-    if keygen_mode && keygen_private_key.exists() {
+    if keygen_private_key.exists() {
         command.env("AXEIN_KEYGEN_PRIVATE_KEY_PATH", &keygen_private_key);
     }
 

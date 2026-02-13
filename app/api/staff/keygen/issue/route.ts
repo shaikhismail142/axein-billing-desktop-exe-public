@@ -130,11 +130,32 @@ function forbidden(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 403 });
 }
 
-export async function POST(req: Request) {
-  if (process.env.AXEIN_INCLUDE_KEYGEN_UI !== "1") {
-    return NextResponse.json({ ok: false, error: "Not available" }, { status: 404 });
-  }
+export async function GET() {
   try {
+    await resolvePrivateKeyPem();
+    return NextResponse.json({
+      ok: true,
+      available: true,
+      message: "Keygen endpoint ready. Use POST to issue a license key.",
+    });
+  } catch {
+    return NextResponse.json({
+      ok: true,
+      available: false,
+      message: "Not available on this install",
+    });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    let privatePem = "";
+    try {
+      privatePem = await resolvePrivateKeyPem();
+    } catch {
+      return NextResponse.json({ ok: false, error: "Not available on this install" }, { status: 404 });
+    }
+
     if (req.headers.get("x-admin") !== "1") {
       return forbidden("Admin context required");
     }
@@ -209,7 +230,6 @@ export async function POST(req: Request) {
       features: normalizeFeatures(body.features),
     };
 
-    const privatePem = await resolvePrivateKeyPem();
     const signingPayload = new TextEncoder().encode(canonicalV2(payload));
     const signature = crypto
       .sign(null, signingPayload, crypto.createPrivateKey(privatePem))

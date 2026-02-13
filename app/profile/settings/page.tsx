@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from "next/link";
+import { useTheme } from "@/app/providers/ThemeProvider";
 
 const LicensePanel = dynamic(
   () => import('@/app/activate/_components/LicensePanel'),
@@ -114,6 +115,7 @@ function normalizeStatus(raw: any): LicenseStatus | null {
 }
 
 export default function SettingsPage() {
+  const { mode, setTheme } = useTheme();
   const [form, setForm] = useState<Business>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -459,9 +461,21 @@ export default function SettingsPage() {
       <section className="rounded-2xl border bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-lg font-semibold">Appearance</h2>
         <p className="mb-3 text-sm opacity-80">
-          AxEin desktop runs in light mode only. Choose a color preset for buttons, highlights, and navigation accents.
+          Choose UI mode and color preset for backgrounds, controls, and navigation accents.
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
+          <label>
+            <div className="muted">UI Mode</div>
+            <select
+              className="input"
+              value={mode}
+              onChange={(e) => setTheme(e.target.value as "light" | "dark" | "system")}
+            >
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="system">System</option>
+            </select>
+          </label>
           <label>
             <div className="muted">Color Preset</div>
             <select

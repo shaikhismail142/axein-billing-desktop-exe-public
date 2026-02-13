@@ -48,6 +48,8 @@ type CustomInvoiceField = {
   position: number;
 };
 
+const RESERVED_INVOICE_FIELD_KEYS = new Set(["payment_mode", "customer_phone"]);
+
 function inr(n: number) {
   const amt = (n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `INR (Rs/-) ${amt}`;
@@ -79,7 +81,7 @@ export default function Billing() {
   // Payment
   const [paymentMode, setPaymentMode] = useState<"paid" | "partial" | "pending">("paid");
   const [amountPaid, setAmountPaid] = useState<number>(0);
-  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [paymentMethod, setPaymentMethod] = useState<string>("");
 
   // -------- Prefill Notes/Terms from settings ----------
   useEffect(() => {
@@ -113,7 +115,12 @@ export default function Billing() {
               visible: row.visible !== false,
               position: Number(row.position || 100),
             }))
-            .filter((row: CustomInvoiceField) => row.field_key && row.label)
+            .filter(
+              (row: CustomInvoiceField) =>
+                row.field_key &&
+                row.label &&
+                !RESERVED_INVOICE_FIELD_KEYS.has(String(row.field_key || "").toLowerCase())
+            )
         );
       } catch {
         // Keep billing flow working even when custom-field API is unavailable.
@@ -592,6 +599,7 @@ export default function Billing() {
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
               >
+                <option value="">Not Set</option>
                 <option value="cash">Cash</option>
                 <option value="upi">UPI</option>
                 <option value="card">Card</option>

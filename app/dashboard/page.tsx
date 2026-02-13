@@ -53,7 +53,7 @@ function movingAvg(values: number[], window = 7) {
 }
 
 export default function DashboardPage() {
-  const [range, setRange] = useState<Range>({ kind: 'preset', days: 14 });
+  const [range, setRange] = useState<Range>({ kind: 'custom', from: todayISO(), to: todayISO() });
   const [rankMode, setRankMode] = useState<TopMode>('qty'); // manual control via UI + hotkey
   const [data, setData] = useState<{ daily: Daily[]; breakdown: BreakdownRow[]; today: Today } | null>(null);
 

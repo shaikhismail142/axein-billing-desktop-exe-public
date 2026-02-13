@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequestBusinessId, getRequestUserId } from "@/app/lib/platform-context";
 import { canViewBusinessRevenue, getUserPermissionCodes, getUserRoles } from "@/app/lib/platform-rbac";
 import { authenticateLanClient } from "@/app/lib/lan-auth";
+import { readSessionFromRequest } from "@/app/lib/session";
 import { pool } from "@/lib/db";
 
 export type AccessContext = {
@@ -13,9 +14,10 @@ export type AccessContext = {
 
 function isAdminBypass(req: Request): boolean {
   if (process.env.DISABLE_ADMIN_CHECK === "1") return true;
+  if (process.env.AXEIN_ALLOW_ADMIN_HEADER !== "1") return false;
+
   const admin = req.headers.get("x-admin");
   if (admin === "1") return true;
-
   const cookie = req.headers.get("cookie") || "";
   return /\bx-admin=1\b/.test(cookie);
 }
@@ -75,11 +77,39 @@ export async function resolveAccessContext(req: Request): Promise<AccessContext>
     };
   }
 
+  const session = readSessionFromRequest(req);
+  if (session) {
+    const [roles, permissions] = await Promise.all([
+      getUserRoles(session.user_id, session.business_id),
+      getUserPermissionCodes(session.user_id, session.business_id),
+    ]);
+    return {
+      businessId: session.business_id,
+      userId: session.user_id,
+      permissions,
+      revenueVisible: canViewBusinessRevenue(roles, permissions),
+    };
+  }
+
   const requestedBusinessId = getRequestBusinessId(req, 0);
   const businessId = requestedBusinessId > 0 ? requestedBusinessId : await resolveImplicitBusinessId(1);
 
   const requestedUserId = getRequestUserId(req, 0);
-  const userId = requestedUserId > 0 ? requestedUserId : await resolveImplicitUserId(businessId, 1);
+  const shouldResolveImplicitUser = isAdminBypass(req);
+  const userId = requestedUserId > 0
+    ? requestedUserId
+    : shouldResolveImplicitUser
+    ? await resolveImplicitUserId(businessId, 1)
+    : 0;
+
+  if (userId <= 0) {
+    return {
+      businessId,
+      userId: 0,
+      permissions: [],
+      revenueVisible: false,
+    };
+  }
 
   const [roles, permissions] = await Promise.all([
     getUserRoles(userId, businessId),

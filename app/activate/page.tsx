@@ -149,6 +149,15 @@ export default function ActivateWizardPage() {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.ok) throw new Error(j?.error || "Business registration failed");
       setBusinessOk(`Registered: ${j?.business?.name || "Success"}`);
+      await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: business.owner_email,
+          password: business.owner_password,
+          business_code: j?.business?.code || "",
+        }),
+      }).catch(() => null);
       setStep("Template");
     } catch (e: any) {
       setBusinessErr(String(e?.message || "Business registration failed"));
@@ -158,6 +167,11 @@ export default function ActivateWizardPage() {
   }
 
   async function finish() {
+    await refreshStatus();
+    if (typeof window !== "undefined") {
+      window.location.assign("/dashboard");
+      return;
+    }
     router.replace("/dashboard");
   }
 
@@ -303,7 +317,10 @@ function LicenseStep({
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
           <div className="font-semibold text-slate-700 mb-1">Device ID</div>
-          <div className="break-all rounded-lg bg-white p-2 border border-slate-200 text-xs font-mono leading-tight">
+          <div
+            className="break-all rounded-lg bg-white p-2 border border-slate-200 text-xs font-mono leading-tight"
+            style={{ maxWidth: "100%", overflowWrap: "anywhere", wordBreak: "break-word" }}
+          >
             {deviceId || "unknown-device"}
           </div>
           <div className="mt-2 text-xs text-slate-500">Share this with AxEin support for licensing.</div>

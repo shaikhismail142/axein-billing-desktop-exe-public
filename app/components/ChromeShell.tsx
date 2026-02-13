@@ -12,6 +12,7 @@ const PRINT_ROUTE_PREFIXES = [
   "/reports/tax/print",
   "/api/invoices",
   "/api/quotations",
+  "/staff/keygen",
 ];
 
 function shouldHideChrome(pathname: string | null) {

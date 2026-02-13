@@ -28,13 +28,11 @@ run(path.join(root, "desktop", "scripts", "prepare-runtime.mjs"), {
   AXEIN_INCLUDE_KEYGEN_UI: "1",
 });
 
-const markerPath = path.join(root, "desktop", "runtime", "app", "standalone", ".axein-keygen-runtime");
-await fs.writeFile(
-  markerPath,
-  [
-    "AxEin staff keygen runtime marker.",
-    "Billing runtime must not contain this file.",
-    `Generated at: ${new Date().toISOString()}`,
-  ].join("\n"),
-  "utf8"
-);
+const markerText = [
+  "AxEin staff keygen runtime marker.",
+  "Billing runtime must not contain this file.",
+  `Generated at: ${new Date().toISOString()}`,
+].join("\n");
+const markerBase = path.join(root, "desktop", "runtime", "app", "standalone");
+await fs.writeFile(path.join(markerBase, ".axein-keygen-runtime"), markerText, "utf8");
+await fs.writeFile(path.join(markerBase, "AXEIN_KEYGEN_RUNTIME.flag"), markerText, "utf8");

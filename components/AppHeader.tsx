@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function cn(...c: Array<string | false | null | undefined>) {
   return c.filter(Boolean).join(" ");
@@ -36,7 +36,39 @@ function NavLink({
 }
 
 export default function AppHeader() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [userName, setUserName] = useState<string>("");
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!mounted) return;
+        if (res.ok && data?.authenticated && data?.user?.full_name) {
+          setUserName(String(data.user.full_name));
+        } else {
+          setUserName("");
+        }
+      } catch {
+        if (mounted) setUserName("");
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    if (typeof window !== "undefined") {
+      window.location.assign("/login");
+    }
+  }
+
+  const showBack = Boolean(pathname && pathname !== "/" && pathname !== "/dashboard");
 
   return (
     <header className="sticky top-0 z-[40]">
@@ -53,6 +85,17 @@ export default function AppHeader() {
               <span className="text-[12px] uppercase tracking-[0.22em] opacity-60">Billing</span>
             </Link>
 
+            {showBack ? (
+              <button
+                type="button"
+                className="ax-navlink"
+                onClick={() => window.history.back()}
+                title="Go back"
+              >
+                Back
+              </button>
+            ) : null}
+
             {/* Desktop Nav (glassy buttons) */}
             <nav className="ml-6 hidden items-center gap-2 md:flex" aria-label="Primary">
               <NavLink href="/" label="Dashboard" exact />
@@ -68,8 +111,24 @@ export default function AppHeader() {
               <NavLink href="/billing" label="Quick Billing" icon={<span>⚡</span>} primary />
             </div>
 
-            {/* Spacer so the fixed top-right tray (Theme + Bell) doesn’t overlap */}
-            <div className="hidden md:block h-9 w-32" aria-hidden />
+            {/* Session chip + logout */}
+            <div className="ml-2 hidden items-center gap-2 md:flex">
+              {userName ? (
+                <span className="ax-navlink" style={{ paddingInline: 10 }}>
+                  {userName}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="ax-navlink"
+                onClick={userName ? logout : () => window.location.assign("/login")}
+              >
+                {userName ? "Logout" : "Sign In"}
+              </button>
+            </div>
+
+            {/* Spacer so fixed top-right tray doesn’t overlap */}
+            <div className="hidden md:block h-9 w-24" aria-hidden />
 
             {/* Mobile menu button */}
             <button
@@ -106,6 +165,13 @@ export default function AppHeader() {
                 <NavLink href="/reports" label="Reports" />
                 <NavLink href="/accounting" label="Accounting" />
                 <NavLink href="/profile" label="Profile" />
+                <button
+                  type="button"
+                  className="ax-navlink"
+                  onClick={userName ? logout : () => window.location.assign("/login")}
+                >
+                  {userName ? "Logout" : "Sign In"}
+                </button>
               </div>
             </nav>
           )}

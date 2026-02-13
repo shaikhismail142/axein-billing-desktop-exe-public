@@ -181,6 +181,7 @@ async function main() {
   await fs.mkdir(releaseDir, { recursive: true });
   const tauri = await readTauriConfig();
   const installers = await listInstallers();
+  const installerNames = installers.map((installer) => path.basename(installer).toLowerCase());
 
   if (installers.length === 0) {
     const message = "No NSIS installer .exe found under desktop/src-tauri/target/release/bundle/nsis.";
@@ -195,6 +196,11 @@ async function main() {
     throw new Error(`${message} Run npm run desktop:build first.`);
   }
 
+  const requiredNameFragments = ["axein billing desktop", "axein license keygen"];
+  const missingInstallers = requiredNameFragments.filter(
+    (fragment) => !installerNames.some((name) => name.includes(fragment))
+  );
+
   const checksums = await readChecksums();
   const results = [];
   for (const installer of installers) {
@@ -202,6 +208,9 @@ async function main() {
   }
 
   const allIssues = results.flatMap((r) => r.issues.map((issue) => `${r.file_name}: ${issue}`));
+  for (const missing of missingInstallers) {
+    allIssues.push(`missing installer containing name fragment "${missing}"`);
+  }
   const report = {
     generated_at: new Date().toISOString(),
     host_platform: process.platform,

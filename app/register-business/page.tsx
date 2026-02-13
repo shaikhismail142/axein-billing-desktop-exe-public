@@ -127,6 +127,15 @@ export default function RegisterBusinessPage() {
       setOk(
         `Business registered: ${j?.business?.name || "Success"} (Code: ${j?.business?.code || "n/a"})`
       );
+      await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: form.owner_email,
+          password: form.owner_password,
+          business_code: j?.business?.code || "",
+        }),
+      }).catch(() => null);
       setTimeout(() => router.push("/dashboard"), 900);
     } catch (e: any) {
       setError(String(e?.message || "Registration failed"));

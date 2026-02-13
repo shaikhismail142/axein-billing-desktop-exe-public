@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   verifySignatureEd25519,
   saveActivationRecord,
+  getActivationStatus,
   type LicensePayload,
 } from "@/app/lib/license-activation";
 import { pool } from "@/lib/db";
@@ -56,11 +57,26 @@ export async function POST(req: Request) {
     let businessId = 1;
     const access = await requireAnyPermission(req, ["perm.license.manage", "perm.settings.manage"], "Forbidden");
     if ("response" in access) {
-      // bootstrap: allow when no business exists yet
-      const rs = await pool.query(`SELECT id FROM businesses ORDER BY id ASC LIMIT 1`).catch(() => null);
-      if (rs?.rows?.length) {
+      const [rs, activation] = await Promise.all([
+        pool
+          .query(
+            `SELECT id
+               FROM businesses
+              WHERE is_active = TRUE
+              ORDER BY updated_at DESC NULLS LAST, id DESC
+              LIMIT 1`
+          )
+          .catch(() => null),
+        getActivationStatus().catch(() => null),
+      ]);
+
+      // Once fully licensed, only admin/owner context can replace key.
+      if (rs?.rows?.length && activation?.isLicensed) {
         return access.response;
       }
+
+      const resolvedBusinessId = Number(rs?.rows?.[0]?.id || 0);
+      businessId = Number.isFinite(resolvedBusinessId) && resolvedBusinessId > 0 ? resolvedBusinessId : 1;
     } else {
       businessId = access.ctx.businessId;
     }

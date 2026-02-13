@@ -49,6 +49,7 @@ async function main() {
       ...process.env,
       AXEIN_DESKTOP: "1",
       AXEIN_FORCE_EMBEDDED_DB: "1",
+      AXEIN_ALLOW_ADMIN_HEADER: "1",
       PORT: String(smokePort),
       HOSTNAME: process.env.HOSTNAME || "127.0.0.1",
       AXEIN_DB_DATA_DIR: smokeDbDir,
@@ -174,6 +175,20 @@ async function main() {
     });
     if (!readLogs.res.ok) {
       throw new Error(`Log read smoke failed: ${readLogs.json?.error || readLogs.res.statusText}`);
+    }
+
+    const keygenUiBlock = await fetch(`${baseUrl}/staff/keygen`, {
+      redirect: "manual",
+      cache: "no-store",
+    });
+    const keygenLocation = keygenUiBlock.headers.get("location") || "";
+    const keygenBlocked =
+      (keygenUiBlock.status >= 300 && keygenUiBlock.status < 400 && keygenLocation.includes("/activate")) ||
+      keygenUiBlock.status === 404;
+    if (!keygenBlocked) {
+      throw new Error(
+        `Billing runtime smoke failed: staff keygen UI should not be accessible (status=${keygenUiBlock.status}, location=${keygenLocation})`
+      );
     }
 
     console.log("Desktop runtime smoke test passed.");

@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
          LEFT JOIN approvals a
            ON a.user_id = u.id
           AND a.status = 'pending'
-          AND a.request_type = 'signup'
+          AND a.request_type IN ('signup', 'admin_user_create')
         WHERE u.business_id = $1
           AND u.status = 'pending'
         ORDER BY u.created_at ASC`,

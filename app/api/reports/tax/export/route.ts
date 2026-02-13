@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextRequest } from "next/server";
+import PDFDocument from "pdfkit";
 import { getTaxReport } from "@/app/lib/tax-report";
 import { requireRevenueAccess } from "@/app/lib/request-access";
 
@@ -11,6 +12,66 @@ function csvEscape(v: any) {
     return `"${s.replace(/\"/g, '""')}"`;
   }
   return s;
+}
+
+function inr(n: number) {
+  return `INR (Rs/-) ${Number(n || 0).toFixed(2)}`;
+}
+
+async function buildTaxPdf(data: Awaited<ReturnType<typeof getTaxReport>>, group: "month" | "quarter", includeDraft: boolean) {
+  const { summary, months } = data;
+  const doc = new PDFDocument({ size: "A4", margin: 36 });
+  const chunks: Uint8Array[] = [];
+  doc.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? new Uint8Array(chunk) : new Uint8Array(chunk)));
+
+  doc.fontSize(18).text("AxEin GST Summary Report", { align: "center" });
+  doc.moveDown(0.8);
+  doc.fontSize(10);
+  doc.text(`Period: ${data.from} to ${data.to}`);
+  doc.text(`Grouping: ${group === "quarter" ? "Quarterly" : "Monthly"}`);
+  doc.text(`Draft Purchases: ${includeDraft ? "Included" : "Excluded"}`);
+  doc.text(`Generated: ${new Date().toISOString()}`);
+  doc.moveDown(0.8);
+
+  doc.fontSize(12).text("Summary");
+  doc.moveDown(0.3);
+  doc.fontSize(10);
+  doc.text(`Output GST (Sales): ${inr(summary.output_tax)}`);
+  doc.text(`Input GST (Purchases/ITC): ${inr(summary.input_tax)}`);
+  doc.text(`Net GST (${summary.status}): ${inr(summary.net_tax)}`);
+  doc.moveDown(0.8);
+
+  doc.fontSize(12).text("Period-wise Breakdown");
+  doc.moveDown(0.4);
+  doc.fontSize(9).font("Courier");
+  doc.text("Period                         Output GST       Input GST        Net GST");
+  doc.text("--------------------------------------------------------------------------");
+  for (const row of months) {
+    const period = String(row.label || row.period || "").padEnd(30, " ").slice(0, 30);
+    const output = Number(row.output_tax || 0).toFixed(2).padStart(12, " ");
+    const input = Number(row.input_tax || 0).toFixed(2).padStart(12, " ");
+    const net = Number(row.net_tax || 0).toFixed(2).padStart(12, " ");
+    doc.text(`${period} ${output} ${input} ${net}`);
+  }
+  if (months.length === 0) {
+    doc.text("No rows available for selected range.");
+  }
+  doc.font("Helvetica");
+
+  return await new Promise<Uint8Array>((resolve, reject) => {
+    doc.on("end", () => {
+      const totalSize = chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+      const merged = new Uint8Array(totalSize);
+      let offset = 0;
+      for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      resolve(merged);
+    });
+    doc.on("error", reject);
+    doc.end();
+  });
 }
 
 export async function GET(req: NextRequest) {
@@ -30,6 +91,19 @@ export async function GET(req: NextRequest) {
     businessId: access.ctx.businessId,
   });
   const { summary, months } = data;
+  if (format === "pdf") {
+    const pdf = await buildTaxPdf(data, group, includeDraft);
+    const filename = `axein-gst-report-${data.from}_to_${data.to}.pdf`;
+    const body = pdf as unknown as BodyInit;
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename=\"${filename}\"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   const lines: string[] = [];
   lines.push(`GST Summary Report`);
