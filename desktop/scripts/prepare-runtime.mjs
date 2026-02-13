@@ -41,6 +41,19 @@ async function copyDir(src, dst) {
   await fs.cp(src, dst, { recursive: true, force: true });
 }
 
+function decodePemFromEnv() {
+  const rawPem = (process.env.AXEIN_KEYGEN_PRIVATE_KEY_PEM || "").trim();
+  if (rawPem) return rawPem;
+
+  const b64 = (process.env.AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64 || "").trim();
+  if (!b64) return "";
+  try {
+    return Buffer.from(b64, "base64").toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
 async function main() {
   if (!(await exists(standaloneSrc))) {
     throw new Error("Missing .next/standalone. Run desktop web build first.");
@@ -84,9 +97,18 @@ async function main() {
     );
   }
 
-  if (process.env.AXEIN_INCLUDE_KEYGEN_PRIVATE === "1" && (await exists(keygenPrivateKeySrc))) {
-    await fs.mkdir(path.dirname(keygenPrivateKeyDst), { recursive: true });
-    await fs.copyFile(keygenPrivateKeySrc, keygenPrivateKeyDst);
+  if (process.env.AXEIN_INCLUDE_KEYGEN_PRIVATE === "1") {
+    const pemFromEnv = decodePemFromEnv();
+    if (pemFromEnv) {
+      if (!pemFromEnv.includes("BEGIN PRIVATE KEY")) {
+        throw new Error("Invalid AXEIN_KEYGEN_PRIVATE_KEY_PEM(_B64): expected PEM private key contents.");
+      }
+      await fs.mkdir(path.dirname(keygenPrivateKeyDst), { recursive: true });
+      await fs.writeFile(keygenPrivateKeyDst, pemFromEnv, { encoding: "utf8", mode: 0o600 });
+    } else if (await exists(keygenPrivateKeySrc)) {
+      await fs.mkdir(path.dirname(keygenPrivateKeyDst), { recursive: true });
+      await fs.copyFile(keygenPrivateKeySrc, keygenPrivateKeyDst);
+    }
   }
 
   const readme = [

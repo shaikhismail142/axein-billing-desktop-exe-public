@@ -50,6 +50,8 @@ jobs:
         run: npm run desktop:smoke
 
       - name: Build staff keygen
+        env:
+          AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64: ${{ secrets.AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64 }}
         run: npm run desktop:keygen:build
 
       - name: Build + metadata + strict verify
