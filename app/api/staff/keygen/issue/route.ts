@@ -6,11 +6,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { isBusinessType } from "@/app/lib/business-templates";
-
-const DEFAULT_SUPER_PASSWORD = "AxEin!K3yG3n#2026@Sup3r-Only";
+import { isKeygenUnlocked } from "@/app/lib/keygen-session";
 
 type Body = {
-  super_password?: string;
   mode?: "new" | "extend";
   existing_license_key?: string;
   extend_from_expires_at?: string;
@@ -130,7 +128,19 @@ function forbidden(message: string) {
   return NextResponse.json({ ok: false, error: message }, { status: 403 });
 }
 
+function keygenApiAvailable() {
+  return process.env.AXEIN_APP_MODE === "keygen" || process.env.AXEIN_INCLUDE_KEYGEN_UI === "1";
+}
+
 export async function GET() {
+  if (!keygenApiAvailable()) {
+    return NextResponse.json({
+      ok: true,
+      available: false,
+      message: "Not available on this install",
+    });
+  }
+
   try {
     await resolvePrivateKeyPem();
     return NextResponse.json({
@@ -149,6 +159,10 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    if (!keygenApiAvailable()) {
+      return NextResponse.json({ ok: false, error: "Not available on this install" }, { status: 404 });
+    }
+
     let privatePem = "";
     try {
       privatePem = await resolvePrivateKeyPem();
@@ -159,15 +173,11 @@ export async function POST(req: Request) {
     if (req.headers.get("x-admin") !== "1") {
       return forbidden("Admin context required");
     }
+    if (!isKeygenUnlocked(req)) {
+      return forbidden("Keygen unlock required");
+    }
 
     const body = (await req.json().catch(() => ({}))) as Body;
-    const superPassword = String(body.super_password || "");
-    const expectedSuperPassword = String(
-      process.env.AXEIN_SUPER_KEYGEN_PASSWORD || DEFAULT_SUPER_PASSWORD
-    );
-    if (!superPassword || superPassword !== expectedSuperPassword) {
-      return forbidden("Super password validation failed");
-    }
 
     const email = String(body.email || "").trim().toLowerCase();
     const businessName = String(body.business_name || "").trim();

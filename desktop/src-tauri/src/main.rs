@@ -3,6 +3,8 @@
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::net::TcpStream;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -10,27 +12,84 @@ use std::time::{Duration, Instant};
 
 use tauri::Manager;
 
-const DESKTOP_PORT: u16 = 3199;
+const BILLING_PORT: u16 = 3199;
+const KEYGEN_PORT: u16 = 3299;
 const RUNTIME_HOST: &str = "127.0.0.1";
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Default)]
 struct RuntimeState {
     child: Mutex<Option<Child>>,
 }
 
-fn wait_for_port(host: &str, port: u16, timeout: Duration) -> bool {
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if TcpStream::connect((host, port)).is_ok() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    false
+fn keygen_app(app: &tauri::AppHandle) -> bool {
+    app.config()
+        .identifier
+        .to_ascii_lowercase()
+        .contains("keygen")
 }
 
-fn runtime_healthy() -> bool {
-    TcpStream::connect((RUNTIME_HOST, DESKTOP_PORT)).is_ok()
+fn runtime_mode(app: &tauri::AppHandle) -> &'static str {
+    if keygen_app(app) {
+        "keygen"
+    } else {
+        "billing"
+    }
+}
+
+fn runtime_port(app: &tauri::AppHandle) -> u16 {
+    if let Ok(raw) = std::env::var("AXEIN_RUNTIME_PORT") {
+        if let Ok(parsed) = raw.parse::<u16>() {
+            if parsed > 0 {
+                return parsed;
+            }
+        }
+    }
+    if keygen_app(app) {
+        KEYGEN_PORT
+    } else {
+        BILLING_PORT
+    }
+}
+
+fn runtime_healthy(port: u16) -> bool {
+    TcpStream::connect((RUNTIME_HOST, port)).is_ok()
+}
+
+fn wait_for_runtime_ready(child: &mut Child, host: &str, port: u16, timeout: Duration) -> Result<(), String> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return Err(format!(
+                    "Local runtime exited early with status {status}. Port {port} may already be in use."
+                ))
+            }
+            Ok(None) => {}
+            Err(err) => return Err(format!("Failed while polling local runtime process: {err}")),
+        }
+
+        if TcpStream::connect((host, port)).is_ok() {
+            std::thread::sleep(Duration::from_millis(250));
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    return Err(format!(
+                        "Local runtime exited after startup probe with status {status}."
+                    ))
+                }
+                Ok(None) => return Ok(()),
+                Err(err) => return Err(format!("Failed while polling local runtime process: {err}")),
+            }
+        }
+
+        std::thread::sleep(Duration::from_millis(250));
+    }
+
+    Err(format!(
+        "Local runtime did not become ready on {host}:{port} within {}s",
+        timeout.as_secs()
+    ))
 }
 
 fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
@@ -143,7 +202,7 @@ fn stop_runtime(app: &tauri::AppHandle) {
     }
 }
 
-fn child_needs_restart(app: &tauri::AppHandle) -> bool {
+fn child_needs_restart(app: &tauri::AppHandle, port: u16) -> bool {
     let state = app.state::<RuntimeState>();
     let mut guard = state.child.lock().expect("runtime lock poisoned");
 
@@ -153,7 +212,7 @@ fn child_needs_restart(app: &tauri::AppHandle) -> bool {
                 *guard = None;
                 true
             }
-            Ok(None) => !runtime_healthy(),
+            Ok(None) => !runtime_healthy(port),
             Err(_) => {
                 *guard = None;
                 true
@@ -177,9 +236,18 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .join("vendor")
         .join("keygen")
         .join("ed25519-private.pem");
-    let keygen_mode = runtime_root.join(".axein-keygen-runtime").exists()
+    let keygen_runtime_detected = runtime_root.join(".axein-keygen-runtime").exists()
         || runtime_root.join("AXEIN_KEYGEN_RUNTIME.flag").exists()
         || keygen_private_key.exists();
+    let mode = runtime_mode(app);
+    let port = runtime_port(app);
+
+    if mode == "keygen" && !keygen_runtime_detected {
+        return Err(
+            "Keygen runtime assets are missing in this install. Reinstall the AxEin License Keygen package."
+                .to_string(),
+        );
+    }
 
     let log_dir = app
         .path()
@@ -214,10 +282,12 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .arg(server_js)
         .current_dir(&runtime_root)
         .env("NODE_ENV", "production")
-        .env("PORT", DESKTOP_PORT.to_string())
+        .env("PORT", port.to_string())
         .env("HOSTNAME", RUNTIME_HOST)
         .env("AXEIN_DESKTOP", "1")
-        .env("AXEIN_INCLUDE_KEYGEN_UI", if keygen_mode { "1" } else { "0" })
+        .env("AXEIN_APP_MODE", mode)
+        .env("AXEIN_RUNTIME_PORT", port.to_string())
+        .env("AXEIN_INCLUDE_KEYGEN_UI", if mode == "keygen" { "1" } else { "0" })
         .env("APP_REQUIRE_BUSINESS_SETUP", "true")
         .env("AXEIN_FORCE_EMBEDDED_DB", "1")
         .env("AXEIN_DB_DATA_DIR", &db_data_dir)
@@ -228,6 +298,11 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
 
     if keygen_private_key.exists() {
         command.env("AXEIN_KEYGEN_PRIVATE_KEY_PATH", &keygen_private_key);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
     }
 
     for key in [
@@ -244,9 +319,15 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         }
     }
 
-    let child = command
+    let mut child = command
         .spawn()
         .map_err(|e| format!("Failed to start local runtime with {:?}: {e}", node_bin_for_err))?;
+
+    if let Err(err) = wait_for_runtime_ready(&mut child, RUNTIME_HOST, port, Duration::from_secs(45)) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(err);
+    }
 
     {
         let state = app.state::<RuntimeState>();
@@ -254,16 +335,12 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         *guard = Some(child);
     }
 
-    if !wait_for_port(RUNTIME_HOST, DESKTOP_PORT, Duration::from_secs(45)) {
-        stop_runtime(app);
-        return Err("Local runtime did not become ready on time".to_string());
-    }
-
     Ok(())
 }
 
 fn ensure_runtime(app: &tauri::AppHandle) -> Result<(), String> {
-    if child_needs_restart(app) {
+    let port = runtime_port(app);
+    if child_needs_restart(app, port) {
         stop_runtime(app);
         spawn_runtime(app)?;
     }

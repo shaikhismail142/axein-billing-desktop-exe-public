@@ -28,9 +28,11 @@ Invoke-RestMethod "http://127.0.0.1:$port/api/auth/session"
 ### 3) Check runtime packaging path (billing or keygen)
 
 ```powershell
-$base="$env:LOCALAPPDATA\AxEin Billing Desktop"
-Get-ChildItem "$base" -Recurse -Filter server.js -ErrorAction SilentlyContinue | Select-Object FullName
-Get-ChildItem "$base" -Recurse -Filter "ed25519-private.pem" -ErrorAction SilentlyContinue | Select-Object FullName
+$billingBase="$env:LOCALAPPDATA\AxEin Billing Desktop"
+$keygenBase="$env:LOCALAPPDATA\AxEin License Keygen"
+Get-ChildItem "$billingBase" -Recurse -Filter server.js -ErrorAction SilentlyContinue | Select-Object FullName
+Get-ChildItem "$keygenBase" -Recurse -Filter server.js -ErrorAction SilentlyContinue | Select-Object FullName
+Get-ChildItem "$keygenBase" -Recurse -Filter "ed25519-private.pem" -ErrorAction SilentlyContinue | Select-Object FullName
 ```
 
 ### 4) Collect runtime logs
@@ -57,13 +59,14 @@ Start-Process $billingExe
 $keygenExe = Get-ChildItem "$env:LOCALAPPDATA\Programs\AxEin License Keygen" -Recurse -Filter *.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
 Start-Process $keygenExe
 Start-Sleep -Seconds 3
-$port=3199
+$port=3299
 Invoke-RestMethod "http://127.0.0.1:$port/api/health"
-Invoke-RestMethod "http://127.0.0.1:$port/api/staff/keygen/issue" -Method Post -Headers @{"Content-Type"="application/json";"x-admin"="1"} -Body '{"super_password":"invalid","email":"x@example.com","business_name":"X","business_type":"general_store","user_limit":1,"computer_limit":1,"validity_months":1}'
+Invoke-RestMethod "http://127.0.0.1:$port/api/staff/keygen/unlock"
+Invoke-WebRequest "http://127.0.0.1:$port/api/staff/keygen/unlock" -Method Post -Headers @{"Content-Type"="application/json";"x-admin"="1"} -Body '{"super_password":"invalid"}'
 ```
 
-Expected: endpoint responds `403` (super password validation failed).  
-If it returns `404 Not available on this install`, that machine has billing runtime (not keygen runtime).
+Expected: unlock POST responds `403` for invalid password.  
+If `/api/staff/keygen/unlock` returns `available=false` or issue route returns `404 Not available on this install`, that machine is not running keygen runtime.
 
 ## macOS/Linux quick checks
 

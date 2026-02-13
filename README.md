@@ -28,6 +28,7 @@ npm run desktop:keygen:selftest
 
 The smoke test runs the desktop runtime with embedded local DB mode, so Postgres is not required for first-run validation.
 `desktop:keygen:selftest` validates keygen-mode routing and staff key endpoint behavior on local runtime.
+- Runtime ports: billing app uses `3199`, keygen app uses `3299`.
 
 ## Staff keygen desktop build
 ```bash

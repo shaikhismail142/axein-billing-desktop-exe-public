@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type KeygenForm = {
-  super_password: string;
   mode: "new" | "extend";
   existing_license_key: string;
   extend_from_expires_at: string;
@@ -61,13 +60,15 @@ async function copyText(value: string) {
 
 export default function StaffKeygenPage() {
   const [busy, setBusy] = useState(false);
+  const [unlockBusy, setUnlockBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [result, setResult] = useState<KeygenResponse | null>(null);
   const [unlocked, setUnlocked] = useState(false);
+  const [available, setAvailable] = useState(true);
+  const [superPassword, setSuperPassword] = useState("");
 
   const [form, setForm] = useState<KeygenForm>({
-    super_password: "",
     mode: "new",
     existing_license_key: "",
     extend_from_expires_at: "",
@@ -91,6 +92,32 @@ export default function StaffKeygenPage() {
     () => (form.usage_mode === "lan_host" ? "business_lan" : "single_pc"),
     [form.usage_mode]
   );
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/staff/keygen/unlock", { cache: "no-store" });
+        const data = (await res.json().catch(() => ({}))) as {
+          available?: boolean;
+          unlocked?: boolean;
+          message?: string;
+        };
+        if (!active) return;
+        setAvailable(data.available !== false);
+        setUnlocked(!!data.unlocked);
+        if (data.available === false && data.message) {
+          setError(data.message);
+        }
+      } catch {
+        if (!active) return;
+        setError("Failed to initialize keygen unlock state");
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -129,14 +156,45 @@ export default function StaffKeygenPage() {
     }
   }
 
-  function unlockForm(e: React.FormEvent) {
+  async function unlockForm(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!form.super_password.trim()) {
+    if (!superPassword.trim()) {
       setError("Enter super password to continue.");
       return;
     }
-    setUnlocked(true);
+    setUnlockBusy(true);
+    try {
+      const res = await fetch("/api/staff/keygen/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin": "1" },
+        body: JSON.stringify({ super_password: superPassword }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
+        throw new Error(String(data.error || "Super password validation failed"));
+      }
+      setUnlocked(true);
+      setSuperPassword("");
+    } catch (e: any) {
+      setError(String(e?.message || "Super password validation failed"));
+      setUnlocked(false);
+    } finally {
+      setUnlockBusy(false);
+    }
+  }
+
+  async function lockForm() {
+    setBusy(true);
+    setError(null);
+    try {
+      await fetch("/api/staff/keygen/unlock", { method: "DELETE" });
+      setUnlocked(false);
+      setOk(null);
+      setResult(null);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -154,15 +212,17 @@ export default function StaffKeygenPage() {
               <input
                 className="input"
                 type="password"
-                value={form.super_password}
-                onChange={(e) => update("super_password", e.target.value)}
+                value={superPassword}
+                onChange={(e) => setSuperPassword(e.target.value)}
                 autoFocus
                 required
               />
             </label>
             {error ? <div style={{ color: "var(--danger)" }}>{error}</div> : null}
             <div>
-              <button className="btn" type="submit">Continue</button>
+              <button className="btn" type="submit" disabled={unlockBusy || !available}>
+                {unlockBusy ? "Checking..." : "Continue"}
+              </button>
             </div>
           </form>
         ) : (
@@ -276,11 +336,7 @@ export default function StaffKeygenPage() {
             <button
               className="btn"
               type="button"
-              onClick={() => {
-                setUnlocked(false);
-                setOk(null);
-                setError(null);
-              }}
+              onClick={lockForm}
             >
               Lock
             </button>

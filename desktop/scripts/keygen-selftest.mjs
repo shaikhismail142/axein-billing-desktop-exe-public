@@ -8,8 +8,9 @@ const __dirname = path.dirname(__filename);
 const root = path.resolve(__dirname, "..", "..");
 const runtimeCmd = process.execPath;
 const runtimeScript = path.join(root, "desktop", "scripts", "run-local-runtime.mjs");
-const smokePort = Number(process.env.PORT || "3199");
+const smokePort = Number(process.env.PORT || "3299");
 const baseUrl = `http://127.0.0.1:${smokePort}`;
+const defaultSuperPassword = "AxEin!K3yG3n#2026@Sup3r-Only";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,6 +40,11 @@ async function main() {
       ...process.env,
       AXEIN_DESKTOP: "1",
       AXEIN_INCLUDE_KEYGEN_UI: "1",
+      AXEIN_APP_MODE: "keygen",
+      AXEIN_RUNTIME_PORT: String(smokePort),
+      AXEIN_KEYGEN_PRIVATE_KEY_PATH:
+        process.env.AXEIN_KEYGEN_PRIVATE_KEY_PATH ||
+        path.join(root, "tools", "license-keygen", "ed25519-private.pem"),
       AXEIN_FORCE_EMBEDDED_DB: "1",
       AXEIN_ALLOW_ADMIN_HEADER: "1",
       PORT: String(smokePort),
@@ -83,11 +89,54 @@ async function main() {
       throw new Error("Keygen page content check failed");
     }
 
-    const invalidPost = await fetch(`${baseUrl}/api/staff/keygen/issue`, {
+    const unlockGet = await fetch(`${baseUrl}/api/staff/keygen/unlock`, {
+      cache: "no-store",
+    });
+    const unlockGetJson = await unlockGet.json().catch(() => ({}));
+    if (!unlockGet.ok || unlockGetJson?.available !== true) {
+      throw new Error(
+        `Keygen unlock GET check failed: status=${unlockGet.status} body=${JSON.stringify(unlockGetJson)}`
+      );
+    }
+
+    const invalidUnlock = await fetch(`${baseUrl}/api/staff/keygen/unlock`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin": "1" },
+      body: JSON.stringify({ super_password: "invalid" }),
+      cache: "no-store",
+    });
+    const invalidUnlockJson = await invalidUnlock.json().catch(() => ({}));
+    if (invalidUnlock.status !== 403) {
+      throw new Error(
+        `Keygen unlock invalid-password check failed: status=${invalidUnlock.status} body=${JSON.stringify(invalidUnlockJson)}`
+      );
+    }
+
+    const validUnlock = await fetch(`${baseUrl}/api/staff/keygen/unlock`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin": "1" },
       body: JSON.stringify({
-        super_password: "invalid",
+        super_password: process.env.AXEIN_SUPER_KEYGEN_PASSWORD || defaultSuperPassword,
+      }),
+      cache: "no-store",
+    });
+    const unlockCookie = validUnlock.headers.get("set-cookie") || "";
+    const validUnlockJson = await validUnlock.json().catch(() => ({}));
+    if (!validUnlock.ok || !validUnlockJson?.ok || !unlockCookie) {
+      throw new Error(
+        `Keygen unlock valid-password check failed: status=${validUnlock.status} body=${JSON.stringify(validUnlockJson)}`
+      );
+    }
+
+    const issuePost = await fetch(`${baseUrl}/api/staff/keygen/issue`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin": "1",
+        cookie: unlockCookie,
+      },
+      body: JSON.stringify({
+        mode: "new",
         email: "smoke@axein.local",
         business_name: "Smoke",
         business_type: "general_store",
@@ -97,10 +146,10 @@ async function main() {
       }),
       cache: "no-store",
     });
-    const invalidJson = await invalidPost.json().catch(() => ({}));
-    if (invalidPost.status !== 403) {
+    const issueJson = await issuePost.json().catch(() => ({}));
+    if (!issuePost.ok || !issueJson?.ok || !issueJson?.packed_token) {
       throw new Error(
-        `Keygen invalid-password check failed: status=${invalidPost.status} body=${JSON.stringify(invalidJson)}`
+        `Keygen issue POST failed: status=${issuePost.status} body=${JSON.stringify(issueJson)}`
       );
     }
 
