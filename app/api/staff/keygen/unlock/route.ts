@@ -2,6 +2,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { NextResponse } from "next/server";
 import {
   createKeygenUnlockToken,
@@ -14,6 +16,24 @@ const DEFAULT_SUPER_PASSWORD = "AxEin!K3yG3n#2026@Sup3r-Only";
 
 function keygenApiAvailable() {
   return process.env.AXEIN_APP_MODE === "keygen" || process.env.AXEIN_INCLUDE_KEYGEN_UI === "1";
+}
+
+async function hasPrivateKey() {
+  const explicit = process.env.AXEIN_KEYGEN_PRIVATE_KEY_PATH?.trim();
+  const candidates = [
+    explicit ? path.resolve(explicit) : "",
+    path.join(process.cwd(), "vendor", "keygen", "ed25519-private.pem"),
+  ].filter(Boolean);
+
+  for (const p of candidates) {
+    try {
+      const pem = await fs.readFile(p, "utf8");
+      if (pem.includes("BEGIN PRIVATE KEY")) return true;
+    } catch {
+      // continue
+    }
+  }
+  return false;
 }
 
 function forbidden(message: string) {
@@ -40,15 +60,21 @@ export async function GET(req: Request) {
       message: "Not available on this install",
     });
   }
+
+  const available = await hasPrivateKey();
   return NextResponse.json({
     ok: true,
-    available: true,
+    available,
     unlocked: isKeygenUnlocked(req),
+    ...(available ? {} : { message: "Keygen private key missing in this install. Reinstall keygen package." }),
   });
 }
 
 export async function POST(req: Request) {
   if (!keygenApiAvailable()) {
+    return NextResponse.json({ ok: false, error: "Not available on this install" }, { status: 404 });
+  }
+  if (!(await hasPrivateKey())) {
     return NextResponse.json({ ok: false, error: "Not available on this install" }, { status: 404 });
   }
   if (req.headers.get("x-admin") !== "1") {

@@ -8,7 +8,8 @@ const NO_STORE_HEADERS = {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const keygenMode = process.env.AXEIN_INCLUDE_KEYGEN_UI === "1";
+  const keygenMode =
+    process.env.AXEIN_APP_MODE === "keygen" || process.env.AXEIN_INCLUDE_KEYGEN_UI === "1";
 
   // Allow static and public assets without checks
   if (

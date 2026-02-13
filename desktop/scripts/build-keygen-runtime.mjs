@@ -28,6 +28,18 @@ run(path.join(root, "desktop", "scripts", "prepare-runtime.mjs"), {
   AXEIN_INCLUDE_KEYGEN_UI: "1",
 });
 
+// Fail build if private key didn't make it into the packaged runtime.
+const keyPath = path.join(root, "desktop", "runtime", "app", "standalone", "vendor", "keygen", "ed25519-private.pem");
+try {
+  const pem = await fs.readFile(keyPath, "utf8");
+  if (!pem.includes("BEGIN PRIVATE KEY")) {
+    throw new Error("invalid key contents");
+  }
+} catch {
+  console.error("Keygen build failed: missing private key in runtime at:", keyPath);
+  process.exit(1);
+}
+
 const markerText = [
   "AxEin staff keygen runtime marker.",
   "Billing runtime must not contain this file.",
