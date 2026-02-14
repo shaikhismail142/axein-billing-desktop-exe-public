@@ -127,6 +127,15 @@ export async function GET(req: Request) {
     ? "(s.meta->>'payment_status')"
     : "NULL";
 
+  const invoiceNoExpr = salesCols.has("invoice_no")
+    ? "NULLIF(s.invoice_no,'')"
+    : hasMeta
+    ? "NULLIF(s.meta->>'invoice_no','')"
+    : "NULL";
+
+  const fromQuotationNumberExpr = hasMeta ? "(s.meta->>'source_quotation_number')" : "NULL";
+  const fromQuotationIdExpr = hasMeta ? "NULLIF(s.meta->>'source_quotation_id','')::int" : "NULL";
+
   // total count
   const { rows: countRows } = await pool.query(
     `
@@ -144,12 +153,14 @@ export async function GET(req: Request) {
     `
     SELECT
       s.id,
-      s.invoice_no,
+      ${invoiceNoExpr} AS invoice_no,
       ${DATE_EXPR} AS created_at,
       ${totalExpr} AS total,
       COALESCE(${pendingExpr}, 0) AS pending_amount,
       ${statusExpr} AS payment_status,
-      c.name AS customer_name
+      c.name AS customer_name,
+      ${fromQuotationNumberExpr} AS source_quotation_number,
+      ${fromQuotationIdExpr} AS source_quotation_id
     FROM sales s
     ${customerJoin}
     ${whereSQL}
@@ -161,12 +172,14 @@ export async function GET(req: Request) {
 
   const items = rows.map((r: any) => ({
     id: r.id as number,
-    invoice_no: r.invoice_no as string,
+    invoice_no: (r.invoice_no as string) || `#${r.id}`,
     created_at: new Date(r.created_at).toISOString(),
     total: Number(r.total ?? 0),
     pending_amount: Number(r.pending_amount ?? 0),
     payment_status: r.payment_status ?? null,
     customer_name: r.customer_name ?? null,
+    source_quotation_number: r.source_quotation_number ?? null,
+    source_quotation_id: Number.isFinite(Number(r.source_quotation_id)) ? Number(r.source_quotation_id) : null,
   }));
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));

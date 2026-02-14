@@ -18,6 +18,8 @@ type Invoice = {
   pending_amount: number;
   payment_status?: string | null;
   customer_name: string | null;
+  source_quotation_number?: string | null;
+  source_quotation_id?: number | null;
 };
 type ApiResp = {
   items: Invoice[];
@@ -209,6 +211,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pag
                   <tr>
                     <th className="px-3 py-2" style={{ width: 40 }}><MasterCheckbox pageIds={items.map(i => i.id)} /></th>
                     <Th label="Invoice #"   href={sortHref("invoice")}  active={sort==="invoice"}  dir={dir} />
+                    <th className="px-3 py-2 text-left">From Quotation</th>
                     <Th label="Date/Time"   href={sortHref("date")}     active={sort==="date"}     dir={dir} />
                     <Th label="Customer"    href={sortHref("customer")} active={sort==="customer"} dir={dir} />
                     <Th label="Total"       href={sortHref("total")}    active={sort==="total"}    dir={dir} />
@@ -240,6 +243,15 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pag
                           })()}
                         </div>
                       </td>
+                      <td className="px-3 py-2">
+                        {inv.source_quotation_number || inv.source_quotation_id ? (
+                          <span className="muted">
+                            {inv.source_quotation_number || `#${inv.source_quotation_id}`}
+                          </span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">{new Date(inv.created_at).toLocaleString('en-IN')}</td>
                       <td className="px-3 py-2">{inv.customer_name ?? "—"}</td>
                       <td className="px-3 py-2">{fmtINR(inv.total)}</td>
@@ -252,7 +264,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pag
                     </tr>
                   ))}
                   {items.length === 0 && (
-                    <tr><td colSpan={6} className="px-3 py-6 text-center muted">No invoices found</td></tr>
+                    <tr><td colSpan={7} className="px-3 py-6 text-center muted">No invoices found</td></tr>
                   )}
                 </tbody>
               </table>

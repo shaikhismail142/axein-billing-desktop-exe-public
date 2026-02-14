@@ -19,6 +19,70 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
+function nowIST(): Date {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+}
+
+function currentFYLabel(d = nowIST()): string {
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth() + 1;
+  const startYear = m <= 3 ? y - 1 : y;
+  const a = String(startYear % 100).padStart(2, "0");
+  const b = String((startYear + 1) % 100).padStart(2, "0");
+  return `FY${a}-${b}`;
+}
+
+async function getColumns(client: any, table: string): Promise<Set<string>> {
+  const r = await client.query(
+    `SELECT LOWER(column_name) AS col
+       FROM information_schema.columns
+      WHERE table_schema='public' AND table_name=$1`,
+    [table]
+  );
+  return new Set<string>(r.rows.map((x: any) => x.col));
+}
+
+async function getNextInvoiceNo(
+  client: any,
+  salesCols: Set<string>,
+  businessId: number,
+  scopeByBusiness: boolean
+): Promise<string> {
+  const prefix = `${currentFYLabel()}/`;
+  if (!salesCols.has("invoice_no")) {
+    // fallback: still generate something user-friendly
+    const t = nowIST();
+    const ymd = `${t.getUTCFullYear()}${String(t.getUTCMonth() + 1).padStart(2, "0")}${String(t.getUTCDate()).padStart(2, "0")}`;
+    const hm = `${String(t.getUTCHours()).padStart(2, "0")}${String(t.getUTCMinutes()).padStart(2, "0")}`;
+    return `INV/${ymd}/${hm}-${Math.floor(Math.random() * 900 + 100)}`;
+  }
+  const rs = scopeByBusiness
+    ? await client.query(
+        `SELECT invoice_no
+           FROM sales
+          WHERE invoice_no LIKE $1
+            AND business_id = $2
+          ORDER BY id DESC
+          LIMIT 1`,
+        [prefix + "%", businessId]
+      )
+    : await client.query(
+        `SELECT invoice_no
+           FROM sales
+          WHERE invoice_no LIKE $1
+          ORDER BY id DESC
+          LIMIT 1`,
+        [prefix + "%"]
+      );
+  let seq = 1;
+  if (rs.rowCount > 0) {
+    const last = String(rs.rows[0].invoice_no || "");
+    const m = last.match(/(\d+)\s*$/);
+    if (m) seq = Number(m[1]) + 1;
+  }
+  return `${prefix}${String(seq).padStart(5, "0")}`;
+}
+
 async function getBusinessScopedTables(client: any, tables: string[]) {
   try {
     const rs = await client.query(
@@ -130,42 +194,41 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   try {
     await client.query('BEGIN');
 
+    const salesCols = await getColumns(client, "sales").catch(() => new Set<string>());
+    const invoice_no = await getNextInvoiceNo(client, salesCols, businessId, hasSalesBusiness).catch(() => null);
+
     const meta = {
       source_quotation_id: quotation.id,
       source_quotation_number: quotation.quotation_number ?? null,
       amount_paid: 0,
       is_return: false,
       notes: quotation?.meta?.notes ?? null,
+      ...(invoice_no ? { invoice_no } : {}),
     };
 
-    const saleCols = [
-      ...(hasSalesBusiness ? ['business_id'] : []),
-      'customer_id',
-      'invoice_date',
-      'subtotal',
-      'tax_total',
-      'total',
-      'meta',
-      'created_at',
-    ];
-    const saleValues = [
-      ...(hasSalesBusiness ? [businessId] : []),
-      quotation.customer_id ?? null,
-      0,
-      0,
-      0,
-      JSON.stringify(meta),
-    ];
-    const salePlaceholders = [
-      ...(hasSalesBusiness ? [`$1`] : []),
-      `$${hasSalesBusiness ? 2 : 1}`,
-      'now()',
-      `$${hasSalesBusiness ? 3 : 2}`,
-      `$${hasSalesBusiness ? 4 : 3}`,
-      `$${hasSalesBusiness ? 5 : 4}`,
-      `$${hasSalesBusiness ? 6 : 5}::jsonb`,
-      'now()',
-    ];
+    const saleCols: string[] = [];
+    const saleValues: any[] = [];
+    const salePlaceholders: string[] = [];
+    const addVal = (col: string, val: any, cast?: string) => {
+      saleCols.push(col);
+      saleValues.push(val);
+      salePlaceholders.push(`$${saleValues.length}${cast ? `::${cast}` : ""}`);
+    };
+    const addNow = (col: string) => {
+      saleCols.push(col);
+      salePlaceholders.push("now()");
+    };
+
+    if (hasSalesBusiness) addVal("business_id", businessId);
+    if (invoice_no && salesCols.has("invoice_no")) addVal("invoice_no", invoice_no);
+    addVal("customer_id", quotation.customer_id ?? null);
+    addNow("invoice_date");
+    addVal("subtotal", 0);
+    addVal("tax_total", 0);
+    addVal("total", 0);
+    addVal("meta", JSON.stringify(meta), "jsonb");
+    addNow("created_at");
+
     const saleRow = (
       await client.query(
         `insert into sales (${saleCols.join(', ')})

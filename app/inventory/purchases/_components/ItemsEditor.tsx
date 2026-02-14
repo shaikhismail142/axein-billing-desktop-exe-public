@@ -19,6 +19,13 @@ type Item = {
   meta?: any;
 };
 
+type ProductOption = {
+  id: number | string;
+  name: string;
+  sku?: string | null;
+  category?: string | null;
+};
+
 /** ---------- Utils ---------- */
 const asNum = (v: any, d = 0) => {
   const n = Number(v);
@@ -104,6 +111,67 @@ export default function ItemsEditor({
         }))
       : [emptyRow()]
   );
+
+  // Product picker (datalist) for fast selection without needing to remember IDs.
+  // Loads up to ~2000 products to keep UI snappy on large catalogs.
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [productsErr, setProductsErr] = useState<string | null>(null);
+  const productById = useMemo(() => {
+    const m = new Map<string, ProductOption>();
+    for (const p of products) m.set(String(p.id), p);
+    return m;
+  }, [products]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setProductsErr(null);
+        const out: ProductOption[] = [];
+        const perPage = 200;
+        const maxPages = 10; // 2000
+        let totalPages = 1;
+
+        for (let page = 1; page <= Math.min(maxPages, totalPages); page++) {
+          const res = await fetch(`/api/products?page=${page}&perPage=${perPage}`, { cache: "no-store" });
+          if (!res.ok) break;
+          const j = await res.json().catch(() => ({}));
+          const items = Array.isArray(j?.items) ? j.items : [];
+          totalPages = Number(j?.totalPages || totalPages || 1);
+
+          for (const it of items) {
+            const id = it?.id;
+            const name = String(it?.name || "").trim();
+            if (id == null || !name) continue;
+            out.push({
+              id,
+              name,
+              sku: it?.sku ?? null,
+              category: it?.category ?? null,
+            });
+          }
+          if (items.length === 0) break;
+        }
+
+        if (!alive) return;
+        const seen = new Set<string>();
+        const uniq: ProductOption[] = [];
+        for (const p of out) {
+          const k = String(p.id);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          uniq.push(p);
+        }
+        setProducts(uniq);
+      } catch (e: any) {
+        if (!alive) return;
+        setProductsErr(String(e?.message || "Failed to load products"));
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Keep at least one row
   useEffect(() => {
@@ -203,6 +271,21 @@ export default function ItemsEditor({
 
   return (
     <div className="rounded-2xl border border-black/5 bg-[color:var(--surface-1)] overflow-x-auto">
+      <datalist id="axein_purchase_products">
+        {products.map((p) => {
+          const bits = [
+            p.name,
+            p.sku ? `SKU:${p.sku}` : "",
+            p.category ? `(${p.category})` : "",
+          ].filter(Boolean);
+          return (
+            <option key={String(p.id)} value={String(p.id)}>
+              {bits.join(" ")}
+            </option>
+          );
+        })}
+      </datalist>
+
       <table className="min-w-full text-sm">
         <thead className="text-left text-[color:var(--muted)]">
           <tr className="border-b border-black/5">
@@ -219,18 +302,63 @@ export default function ItemsEditor({
           </tr>
         </thead>
         <tbody>
+          {productsErr ? (
+            <tr className="border-b border-black/5">
+              <td className="px-3 py-2 text-xs text-[color:var(--muted)]" colSpan={10}>
+                Product dropdown unavailable (manual Product ID still works). {productsErr}
+              </td>
+            </tr>
+          ) : null}
+
           {rows.map((r, i) => (
             <tr key={i} className={`border-b border-black/5 ${invalidRow(r) ? "bg-red-50/40" : ""}`}>
               <td className="px-3 py-2">
                 <input
                   className="w-28 rounded-lg border border-black/10 px-2 py-1"
                   value={r.product_id ?? ""}
-                  onChange={(e) => update(i, { product_id: e.target.value })}
+                  onChange={(e) => {
+                    const product_id = e.target.value;
+                    const p = productById.get(String(product_id));
+                    update(i, { product_id, name: p?.name ?? r.name ?? "" });
+                  }}
                   onKeyDown={(e) => onCellKeyDown(e, i)}
                   placeholder="ID"
+                  list="axein_purchase_products"
                 />
+                {(() => {
+                  const p = productById.get(String(r.product_id || ""));
+                  if (!p) return null;
+                  const hint = [p.sku ? `SKU ${p.sku}` : "", p.category ? p.category : ""]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <div className="text-[11px] text-[color:var(--muted)] mt-1" style={{ lineHeight: 1.2 }}>
+                      {hint || "Selected"}
+                    </div>
+                  );
+                })()}
               </td>
               <td className="px-3 py-2">
+                {products.length ? (
+                  <select
+                    className="w-44 rounded-lg border border-black/10 px-2 py-1 mb-1 bg-white/60"
+                    value={String(r.product_id ?? "")}
+                    onChange={(e) => {
+                      const product_id = e.target.value;
+                      const p = productById.get(String(product_id));
+                      update(i, { product_id, name: p?.name ?? r.name ?? "" });
+                    }}
+                    title="Select product by name"
+                  >
+                    <option value="">Select product…</option>
+                    {products.map((p) => (
+                      <option key={String(p.id)} value={String(p.id)}>
+                        {p.name}
+                        {p.sku ? ` (SKU:${p.sku})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
                 <input
                   className="w-44 rounded-lg border border-black/10 px-2 py-1"
                   value={r.name ?? ""}

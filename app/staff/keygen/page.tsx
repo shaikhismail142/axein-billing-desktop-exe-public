@@ -200,7 +200,10 @@ export default function StaffKeygenPage() {
           sort: historySort,
           dir: historyDir,
         });
-        const res = await fetch(`/api/staff/keygen/history?${qs.toString()}`, { cache: "no-store" });
+        const res = await fetch(`/api/staff/keygen/history?${qs.toString()}`, {
+          cache: "no-store",
+          headers: { "x-admin": "1" },
+        });
         const data = (await res.json().catch(() => ({}))) as HistoryResponse;
         if (!active) return;
         if (!res.ok || !data?.ok) {

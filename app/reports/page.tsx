@@ -162,7 +162,6 @@ export default function ReportsPage() {
   const taxSummary = taxReport?.summary;
   const taxStatusLabel = taxSummary?.status === "Payable" ? "GST Payable" : "ITC Credit";
   const taxStatusColor = taxSummary?.status === "Payable" ? theme.warning : theme.success;
-  const taxPrintUrl = `/reports/tax/print?from=${range.from}&to=${range.to}&group=${taxGroup}&includeDraft=${includeDraftPurchases ? 1 : 0}`;
   const taxPdfUrl = `/api/reports/tax/export?format=pdf&from=${range.from}&to=${range.to}&group=${taxGroup}&includeDraft=${includeDraftPurchases ? 1 : 0}`;
   const taxCsvUrl = `/api/reports/tax/export?format=csv&from=${range.from}&to=${range.to}&group=${taxGroup}&includeDraft=${includeDraftPurchases ? 1 : 0}`;
   const taxExcelUrl = `/api/reports/tax/export?format=excel&from=${range.from}&to=${range.to}&group=${taxGroup}&includeDraft=${includeDraftPurchases ? 1 : 0}`;
@@ -286,7 +285,6 @@ export default function ReportsPage() {
                 Include draft purchases
               </label>
               <a className="btn" href={taxPdfUrl}>Download PDF</a>
-              <a className="btn" href={taxPrintUrl} target="_blank" rel="noreferrer">Print View</a>
               <a className="btn" href={taxCsvUrl}>Export CSV</a>
               <a className="btn" href={taxExcelUrl}>Export Excel</a>
             </div>

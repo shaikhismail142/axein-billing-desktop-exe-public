@@ -8,7 +8,7 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { guardApiActivated } from "@/lib/activation-guard";
-import { requireAnyPermission } from "@/app/lib/request-access";
+import { resolveAccessContext } from "@/app/lib/request-access";
 
 async function getColumns(client: any, table: string): Promise<Set<string>> {
   const r = await client.query(
@@ -27,13 +27,22 @@ async function tableExists(client: any, table: string): Promise<boolean> {
 
 export async function GET(req: NextRequest) {
   await guardApiActivated(true);
-  const access = await requireAnyPermission(
-    req,
-    ["perm.inventory.manage", "perm.reports.view", "perm.purchases.manage", "perm.sales.manage"],
-    "Forbidden"
-  );
-  if ("response" in access) return access.response;
-  const businessId = access.ctx.businessId;
+  const ctx = await resolveAccessContext(req);
+  const businessId = ctx.businessId;
+
+  // Important: the bell UI polls frequently. Returning 0 alerts for users lacking access
+  // prevents audit-log noise from repeated 403s.
+  const needed = ["perm.inventory.manage", "perm.reports.view", "perm.purchases.manage", "perm.sales.manage"];
+  const canSeeAny = needed.some((p) => ctx.permissions.includes(p));
+  if (!canSeeAny) {
+    return NextResponse.json({
+      ok: true,
+      near_expiry_days: 30,
+      counts: { low_stock: 0, near_expiry: 0, expired: 0, debts: 0 },
+      items: { low_stock: [], expiry: [], debts: [] },
+      debts: { total_pending: 0 },
+    });
+  }
 
   const client = await pool.connect();
   try {
