@@ -42,6 +42,8 @@ function cssVar(name: string, fallback: string) {
 }
 
 export default function ReportsPage() {
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [allowedMsg, setAllowedMsg] = useState<string>('');
   const [range, setRange] = useState<DateRange>({ from: ndaysAgoISO(30), to: todayISO() });
   const [deadDays, setDeadDays] = useState<number>(30);
   const [deadPage, setDeadPage] = useState<number>(1);
@@ -57,6 +59,27 @@ export default function ReportsPage() {
   const [taxGroup, setTaxGroup] = useState<"month" | "quarter">("month");
   const [includeDraftPurchases, setIncludeDraftPurchases] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/profile/access', { cache: 'no-store' });
+        const j = await res.json().catch(() => ({}));
+        const permissions = Array.isArray(j?.permissions) ? j.permissions.map(String) : [];
+        const hasReports = permissions.includes('perm.reports.view');
+        const revenueVisible = j?.access?.revenue_visible === true;
+        if (!hasReports || !revenueVisible) {
+          setAllowed(false);
+          setAllowedMsg('Access restricted to admin/owner users.');
+          return;
+        }
+        setAllowed(true);
+      } catch {
+        setAllowed(false);
+        setAllowedMsg('Unable to verify access. Please sign in again.');
+      }
+    })();
+  }, []);
 
   const theme = {
     text: cssVar('--text', '#111827'),
@@ -113,7 +136,10 @@ export default function ReportsPage() {
   }, [deadDays]);
 
   // Single effect, correctly depends on loadAll
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => {
+    if (allowed !== true) return;
+    loadAll();
+  }, [loadAll, allowed]);
 
   const fast = useMemo(
     () => movers.slice().sort((a, b) => b.qty - a.qty).slice(0, 10),
@@ -140,6 +166,34 @@ export default function ReportsPage() {
   const taxPdfUrl = `/api/reports/tax/export?format=pdf&from=${range.from}&to=${range.to}&group=${taxGroup}&includeDraft=${includeDraftPurchases ? 1 : 0}`;
   const taxCsvUrl = `/api/reports/tax/export?format=csv&from=${range.from}&to=${range.to}&group=${taxGroup}&includeDraft=${includeDraftPurchases ? 1 : 0}`;
   const taxExcelUrl = `/api/reports/tax/export?format=excel&from=${range.from}&to=${range.to}&group=${taxGroup}&includeDraft=${includeDraftPurchases ? 1 : 0}`;
+
+  if (allowed === null) {
+    return (
+      <div className="container">
+        <div className="card" style={{ padding: 16 }}>
+          <h1 style={{ margin: 0 }}>Reports</h1>
+          <div className="muted" style={{ marginTop: 6 }}>Loading…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (allowed === false) {
+    return (
+      <div className="container">
+        <div className="card" style={{ padding: 16 }}>
+          <h1 style={{ margin: 0 }}>Reports</h1>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {allowedMsg || 'Access restricted.'}
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+            <a className="btn" href="/billing">Go to Quick Billing</a>
+            <a className="btn" href="/profile">Open Profile</a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

@@ -3,11 +3,11 @@ export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
 import Link from "next/link";
-import { headers } from "next/headers";
 import { SelectionProvider } from "./_components/selection";
 import { MasterCheckbox, RowCheckbox } from "./_components/checks";
 import BulkTray from "./_components/BulkTray";
 import { ensureActivated } from "@/app/lib/activation-guard";
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 /* ---------- Types ---------- */
 type Invoice = {
@@ -40,17 +40,13 @@ type PageParams = {
 
 /* ---------- Helpers ---------- */
 const fmtINR = (n: number) => `INR (Rs/-) ${Number(n || 0).toFixed(2)}`;
-function buildBaseUrl() {
-  const hdrs = headers();
-  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host");
-  const proto = hdrs.get("x-forwarded-proto") ?? "http";
-  if (!host) return "";
-  return `${proto}://${host}`;
-}
 function nextDir(d: "asc" | "desc") { return d === "asc" ? "desc" : "asc"; }
 
 /* ---------- Data fetch ---------- */
-async function fetchInvoices(sp: PageParams): Promise<ApiResp> {
+async function fetchInvoices(
+  sp: PageParams,
+  ctx: ReturnType<typeof getServerRequestContext>
+): Promise<ApiResp> {
   const page = String(Math.max(1, Number(sp.page ?? 1)));
   const perPage = String(Math.min(200, Math.max(1, Number(sp.perPage ?? 20))));
   const qs = new URLSearchParams({ page, perPage });
@@ -62,7 +58,7 @@ async function fetchInvoices(sp: PageParams): Promise<ApiResp> {
   if (sp.to) qs.set("to", String(sp.to));
   if (sp.customerId) qs.set("customerId", String(sp.customerId));
 
-  const res = await fetch(`${buildBaseUrl()}/api/invoices?${qs}`, { cache: "no-store" });
+  const res = await fetch(`${ctx.baseUrl}/api/invoices?${qs}`, { cache: "no-store", headers: ctx.authHeaders });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Invoices API failed (${res.status}): ${text || res.statusText}`);
@@ -107,6 +103,7 @@ function PerPage({ qs, value }:{ qs:URLSearchParams; value:number }) {
 /* ---------- Page ---------- */
 export default async function InvoicesPage({ searchParams }: { searchParams: PageParams }) {
   await ensureActivated(true);
+  const ctx = getServerRequestContext();
 
   const q = typeof searchParams.q === "string" ? searchParams.q : "";
   const sort = (searchParams.sort as "date" | "invoice" | "customer" | "total") || "date";
@@ -116,7 +113,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pag
 
   let data: ApiResp | null = null;
   let errorMsg = "";
-  try { data = await fetchInvoices(searchParams); }
+  try { data = await fetchInvoices(searchParams, ctx); }
   catch (e: any) { errorMsg = e?.message ?? "Failed to fetch invoices"; }
 
   const items = data?.items ?? [];

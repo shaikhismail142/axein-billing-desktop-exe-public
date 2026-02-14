@@ -5,22 +5,20 @@ export const fetchCache = "force-no-store";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { getServerRequestContext } from "@/app/lib/server-request";
 
-function getBaseUrl() {
-  return process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || "http://localhost:3000";
-}
-
-async function getPurchase(id: string) {
-  const res = await fetch(`${getBaseUrl()}/api/purchases/${id}`, { cache: "no-store" });
+async function getPurchase(ctx: ReturnType<typeof getServerRequestContext>, id: string) {
+  const res = await fetch(`${ctx.baseUrl}/api/purchases/${id}`, { cache: "no-store", headers: ctx.authHeaders });
   if (!res.ok) return null;
   return res.json().catch(() => null);
 }
 
 async function deletePurchaseAction(formData: FormData) {
   "use server";
+  const ctx = getServerRequestContext();
   const id = String(formData.get("id") || "");
   if (!id) return;
-  await fetch(`${getBaseUrl()}/api/purchases/${id}`, { method: "DELETE", cache: "no-store" });
+  await fetch(`${ctx.baseUrl}/api/purchases/${id}`, { method: "DELETE", cache: "no-store", headers: ctx.authHeaders });
   revalidatePath("/inventory/purchases");
   redirect("/inventory/purchases");
 }
@@ -28,7 +26,8 @@ async function deletePurchaseAction(formData: FormData) {
 const asINR = (n: any) => `INR (Rs/-) ${Number(n || 0).toFixed(2)}`;
 
 export default async function PurchaseDetailPage({ params }: { params: { id: string } }) {
-  const data = await getPurchase(params.id);
+  const ctx = getServerRequestContext();
+  const data = await getPurchase(ctx, params.id);
   if (!data?.ok) {
     return (
       <div className="p-6">

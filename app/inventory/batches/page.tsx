@@ -1,6 +1,6 @@
 // app/inventory/batches/page.tsx
 import BatchesClient from "./_components/BatchesClient";
-import { headers } from "next/headers";
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;                 // number (valid)
@@ -39,19 +39,10 @@ type PageProps = {
   };
 };
 
-// Build a safe absolute origin for server-side fetches
-function getOrigin() {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") || "http";
-  const host =
-    h.get("x-forwarded-host") ||
-    h.get("host") ||
-    process.env.NEXT_PUBLIC_BASE_URL?.replace(/^https?:\/\//, "") ||
-    "localhost:3000";
-  return `${proto}://${host}`;
-}
-
-async function getBatches(searchParams: PageProps["searchParams"]): Promise<ApiResp> {
+async function getBatches(
+  searchParams: PageProps["searchParams"],
+  ctx: ReturnType<typeof getServerRequestContext>
+): Promise<ApiResp> {
   const page    = searchParams?.page    ?? "1";
   const q       = searchParams?.q       ?? "";
   const expiry  = searchParams?.expiry  ?? "all";
@@ -65,11 +56,10 @@ async function getBatches(searchParams: PageProps["searchParams"]): Promise<ApiR
     onlyQty,
   });
 
-  const origin = getOrigin();
-  const url = `${origin}/api/batches?${qs.toString()}`;
+  const url = `${ctx.baseUrl}/api/batches?${qs.toString()}`;
 
   // Choose ONE strategy; here we use no-store only.
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, { cache: "no-store", headers: ctx.authHeaders });
 
   if (!res.ok) {
     console.error("[/inventory/batches] /api/batches failed", res.status, await res.text());
@@ -87,7 +77,8 @@ async function getBatches(searchParams: PageProps["searchParams"]): Promise<ApiR
 }
 
 export default async function BatchesPage({ searchParams }: PageProps) {
-  const initialData = await getBatches(searchParams);
+  const ctx = getServerRequestContext();
+  const initialData = await getBatches(searchParams, ctx);
 
   const current = {
     page: searchParams?.page ?? "1",

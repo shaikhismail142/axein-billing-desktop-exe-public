@@ -3,10 +3,8 @@ export const revalidate = 0;
 export const fetchCache = "force-no-store";
 
 import Link from "next/link";
+import { getServerRequestContext } from "@/app/lib/server-request";
 
-function getBaseUrl() {
-  return process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || "http://localhost:3000";
-}
 function formatINR(n: unknown) {
   const num = typeof n === "number" ? n : Number(n ?? 0);
   if (!isFinite(num)) return "INR (Rs/-) 0.00";
@@ -35,14 +33,18 @@ interface PurchaseRow {
   [key: string]: any;
 }
 
-async function fetchPurchases(q: string, page: number, pageSize: number) {
-  const origin = getBaseUrl();
+async function fetchPurchases(ctx: ReturnType<typeof getServerRequestContext>, q: string, page: number, pageSize: number) {
   const params = new URLSearchParams({
     limit: String(pageSize),
     offset: String((page - 1) * pageSize),
   });
   if (q) params.set("q", q);
-  const res = await fetch(`${origin}/api/purchases?${params.toString()}`, { cache: "no-store" });
+  let res: Response;
+  try {
+    res = await fetch(`${ctx.baseUrl}/api/purchases?${params.toString()}`, { cache: "no-store", headers: ctx.authHeaders });
+  } catch {
+    return { rows: [], total: 0 };
+  }
   if (!res.ok) return { rows: [], total: 0 };
   const data = await res.json().catch(() => ({} as any));
   if (data?.rows && Number.isFinite(data?.total)) return { rows: data.rows as PurchaseRow[], total: Number(data.total) };
@@ -53,11 +55,12 @@ async function fetchPurchases(q: string, page: number, pageSize: number) {
 }
 
 export default async function PurchasesPage({ searchParams }: { searchParams?: Record<string, string> }) {
+  const ctx = getServerRequestContext();
   const q = (searchParams?.q ?? "").trim();
   const page = Math.max(1, Number(searchParams?.page ?? 1));
   const pageSize = 10;
 
-  const { rows, total } = await fetchPurchases(q, page, pageSize);
+  const { rows, total } = await fetchPurchases(ctx, q, page, pageSize);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const makeHref = (nextPage: number, nextQ = q) => {

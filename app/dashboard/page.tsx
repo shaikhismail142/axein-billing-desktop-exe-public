@@ -56,6 +56,8 @@ export default function DashboardPage() {
   const [range, setRange] = useState<Range>({ kind: 'custom', from: todayISO(), to: todayISO() });
   const [rankMode, setRankMode] = useState<TopMode>('qty'); // manual control via UI + hotkey
   const [data, setData] = useState<{ daily: Daily[]; breakdown: BreakdownRow[]; today: Today } | null>(null);
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [allowedMsg, setAllowedMsg] = useState<string>('');
 
   const { fromISO, toISO } = useMemo(() => {
     if (range.kind === 'preset') {
@@ -76,6 +78,28 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/profile/access', { cache: 'no-store' });
+        const j = await res.json().catch(() => ({}));
+        const permissions = Array.isArray(j?.permissions) ? j.permissions.map(String) : [];
+        const hasReports = permissions.includes('perm.reports.view');
+        const revenueVisible = j?.access?.revenue_visible === true;
+        if (!hasReports || !revenueVisible) {
+          setAllowed(false);
+          setAllowedMsg('Access restricted to admin/owner users.');
+          return;
+        }
+        setAllowed(true);
+      } catch {
+        setAllowed(false);
+        setAllowedMsg('Unable to verify access. Please sign in again.');
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (allowed === false) return;
     const url = new URL('/api/analytics/sales', window.location.origin);
     url.searchParams.set('from', fromISO);
     url.searchParams.set('to', toISO);
@@ -89,7 +113,7 @@ export default function DashboardPage() {
         })
       )
       .catch(() => setData({ daily: [], breakdown: [], today: { sales_total: 0, gross_profit: 0 } }));
-  }, [fromISO, toISO]);
+  }, [fromISO, toISO, allowed]);
 
   // Derived stats for the range
   const series = useMemo(() => data?.daily ?? [], [data?.daily]);
@@ -132,6 +156,34 @@ export default function DashboardPage() {
     const sorted = [...rows].sort((a, b) => (rankMode === 'qty' ? b.qty - a.qty : b.total - a.total));
     return sorted.slice(0, 3).map((r) => ({ ...r, share: ((rankMode === 'qty' ? r.qty : r.total) / denom) * 100, mode: rankMode }));
   }, [data?.breakdown, rankMode]);
+
+  if (allowed === null) {
+    return (
+      <div className="container">
+        <div className="card" style={{ padding: 16 }}>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Dashboard & Reports</h1>
+          <div className="muted" style={{ marginTop: 6 }}>Loading…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (allowed === false) {
+    return (
+      <div className="container">
+        <div className="card" style={{ padding: 16 }}>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Dashboard & Reports</h1>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {allowedMsg || 'Access restricted.'}
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+            <a className="btn" href="/billing">Go to Quick Billing</a>
+            <a className="btn" href="/profile">Open Profile</a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container">

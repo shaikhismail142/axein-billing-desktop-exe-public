@@ -3,21 +3,24 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 import LicenseForm from './_components/LicenseForm';
 import TrialCard from './_components/TrialCard';
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const revalidate = 0;
 
-async function getStatus() {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/license/status`, {
+async function getStatus(ctx: ReturnType<typeof getServerRequestContext>) {
+  const res = await fetch(`${ctx.baseUrl}/api/license/status`, {
     cache: 'no-store',
+    headers: ctx.authHeaders,
   });
   if (!res.ok) return { ok: false, error: `Status failed (${res.status})` };
   return res.json();
 }
 
 export default async function LicensePage() {
-  const data = await getStatus();
+  const ctx = getServerRequestContext();
+  const data = await getStatus(ctx);
   return (
     <main className="max-w-2xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-semibold mb-2">License & Trial</h1>

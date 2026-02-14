@@ -7,12 +7,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import ItemsEditor from "../_components/ItemsEditor";
 import { pool } from "@/lib/db";
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 /* ---------------------------------- utils --------------------------------- */
-
-function getBaseUrl() {
-  return process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || "http://localhost:3000";
-}
 
 function isNextRedirectErr(err: unknown) {
   // When we redirect() in a server action, Next throws an internal NEXT_REDIRECT error.
@@ -100,7 +97,7 @@ async function createMissingProducts(missingIds: string[], items: any[]) {
 
 async function createPurchase(formData: FormData) {
   "use server";
-  const origin = getBaseUrl();
+  const ctx = getServerRequestContext();
 
   const vendor_name   = String(formData.get("vendor_name") || "").trim();
   const invoice_no    = String(formData.get("invoice_no") || "").trim();
@@ -151,9 +148,9 @@ async function createPurchase(formData: FormData) {
   };
 
   const tryPost = async () => {
-    const res = await fetch(`${origin}/api/purchases`, {
+    const res = await fetch(`${ctx.baseUrl}/api/purchases`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...ctx.authHeaders, "content-type": "application/json" },
       body: JSON.stringify(payload),
       cache: "no-store",
     });

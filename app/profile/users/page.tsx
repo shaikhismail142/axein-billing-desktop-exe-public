@@ -285,6 +285,37 @@ export default function ProfileUsersPage() {
     }
   }
 
+  async function setUserStatus(user: BusinessUser, status: "active" | "disabled") {
+    const verb = status === "disabled" ? "disable" : "enable";
+    if (
+      status === "disabled" &&
+      !window.confirm(
+        `Disable access for ${user.email}?\n\nThey will be logged out and will no longer count toward active seats.`
+      )
+    ) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setOk(null);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-admin": "1" },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Failed to ${verb} user`);
+      setOk(`User ${verb}d: ${user.email}`);
+      await refreshAll();
+    } catch (e: any) {
+      setError(String(e?.message || `Failed to ${verb} user`));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="container">
       <div className="card" style={{ padding: 16 }}>
@@ -483,9 +514,20 @@ export default function ProfileUsersPage() {
                   </td>
                   <td>{new Date(user.created_at).toLocaleString()}</td>
                   <td>
-                    <button className="btn" disabled={saving} onClick={() => resetPasswordForUser(user)}>
-                      Reset Password
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button className="btn" disabled={saving} onClick={() => resetPasswordForUser(user)}>
+                        Reset Password
+                      </button>
+                      {String(user.status || "").toLowerCase() === "active" ? (
+                        <button className="btn" disabled={saving} onClick={() => setUserStatus(user, "disabled")}>
+                          Disable
+                        </button>
+                      ) : String(user.status || "").toLowerCase() === "disabled" ? (
+                        <button className="btn" disabled={saving} onClick={() => setUserStatus(user, "active")}>
+                          Enable
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -1,7 +1,7 @@
 // app/products/[id]/edit/page.tsx
 import Link from "next/link";
-import { headers } from "next/headers";
 import EditForm from "./EditForm";
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 type ProductApi = {
   ok: boolean;
@@ -20,15 +20,8 @@ type ProductApi = {
   notes?: string;
 };
 
-function baseUrl() {
-  const h = headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return host ? `${proto}://${host}` : "";
-}
-
-async function fetchProduct(id: number): Promise<ProductApi> {
-  const res = await fetch(`${baseUrl()}/api/products/${id}`, { cache: "no-store" });
+async function fetchProduct(id: number, ctx: ReturnType<typeof getServerRequestContext>): Promise<ProductApi> {
+  const res = await fetch(`${ctx.baseUrl}/api/products/${id}`, { cache: "no-store", headers: ctx.authHeaders });
   // If API fails, surface a consistent shape so the page can render an error panel
   if (!res.ok) {
     let msg = "";
@@ -58,7 +51,8 @@ export default async function Page({ params }: { params: { id: string } }) {
     );
   }
 
-  const data = await fetchProduct(id);
+  const ctx = getServerRequestContext();
+  const data = await fetchProduct(id, ctx);
 
   if (!data.ok) {
     return (

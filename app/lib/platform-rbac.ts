@@ -37,5 +37,9 @@ export async function getUserPermissionCodes(userId: number, businessId: number)
 
 export function canViewBusinessRevenue(roles: RoleSummary[], permissionCodes: string[]): boolean {
   if (permissionCodes.includes("perm.view.revenue_summary")) return true;
-  return roles.some((r) => r.revenue_visible === true && String(r.code).toLowerCase() === "admin");
+  return roles.some((r) => {
+    const code = String(r.code).toLowerCase();
+    if (code === "owner") return true;
+    return r.revenue_visible === true && code === "admin";
+  });
 }

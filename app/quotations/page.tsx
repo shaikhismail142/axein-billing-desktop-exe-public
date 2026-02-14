@@ -1,9 +1,9 @@
 // app/quotations/page.tsx
 import Link from "next/link";
-import { headers } from "next/headers";
 import { SelectionProvider } from "./_components/selection";
 import { MasterCheckbox, RowCheckbox } from "./_components/checks";
 import BulkTray from "./_components/BulkTray";
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,19 +28,12 @@ const fmtINR = (n: number) => {
   return `INR (Rs/-) ${x}.${parts[1]}`;
 };
 
-function resolveBaseUrl() {
-  const h = headers();
-  const host = h.get("x-forwarded-host") || h.get("host") || "127.0.0.1:3199";
-  const proto = h.get("x-forwarded-proto") || (host.includes("localhost") || host.startsWith("127.") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
-async function fetchRows(baseUrl: string, q: string, page: number, perPage: number) {
-  const url = new URL("/api/quotations", baseUrl);
+async function fetchRows(ctx: ReturnType<typeof getServerRequestContext>, q: string, page: number, perPage: number) {
+  const url = new URL("/api/quotations", ctx.baseUrl);
   if (q) url.searchParams.set("q", q);
   url.searchParams.set("page", String(page));
   url.searchParams.set("perPage", String(perPage));
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const res = await fetch(url.toString(), { cache: "no-store", headers: ctx.authHeaders });
   if (!res.ok) return { error: `Failed to load (status ${res.status})`, rows: [] as Row[], total: 0, page, perPage, totalPages: 1 };
   const data = await res.json();
   return {
@@ -54,11 +47,11 @@ async function fetchRows(baseUrl: string, q: string, page: number, perPage: numb
 }
 
 export default async function Page({ searchParams }: { searchParams: { q?: string; page?: string; perPage?: string } }) {
+  const ctx = getServerRequestContext();
   const q = (searchParams?.q ?? "").trim();
   const page = Math.max(1, Number(searchParams?.page || 1));
   const perPage = Math.min(200, Math.max(1, Number(searchParams?.perPage || 20)));
-  const baseUrl = resolveBaseUrl();
-  const { rows, error, total, totalPages } = await fetchRows(baseUrl, q, page, perPage);
+  const { rows, error, total, totalPages } = await fetchRows(ctx, q, page, perPage);
   const pageIds = rows.map((r) => r.id);
 
   return (

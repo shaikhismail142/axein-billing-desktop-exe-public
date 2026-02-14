@@ -1,7 +1,7 @@
 // app/inventory/expiry/page.tsx
 // AxEin Billing — Expiry Page (server component)
 
-import { headers } from "next/headers";
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -35,24 +35,25 @@ export default async function ExpiryPage({
 }: {
   searchParams?: { q?: string; nearPage?: string; expiredPage?: string };
 }) {
+  const ctx = getServerRequestContext();
   const q = (searchParams?.q || "").trim();
   const nearPage = Math.max(1, Number(searchParams?.nearPage || 1));
   const expiredPage = Math.max(1, Number(searchParams?.expiredPage || 1));
   const perPage = 20;
 
-  // Build absolute origin for server-side fetch (fixes ERR_INVALID_URL)
-  const h = headers();
-  const xfProto = h.get("x-forwarded-proto");
-  const xfHost = h.get("x-forwarded-host");
-  const origin = xfHost
-    ? `${xfProto || "http"}://${xfHost}`
-    : process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-
   const qs = new URLSearchParams();
   if (q) qs.set("q", q);
-  const res = await fetch(`${origin}/api/expiry?${qs.toString()}`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch expiry data");
-  const data = await res.json();
+  const res = await fetch(`${ctx.baseUrl}/api/expiry?${qs.toString()}`, {
+    cache: "no-store",
+    headers: ctx.authHeaders,
+  });
+  let errorMsg = "";
+  const data = res.ok
+    ? await res.json().catch(() => ({}))
+    : (() => {
+        errorMsg = `Expiry API failed (${res.status})`;
+        return {};
+      })();
 
   const nearDays: number = data?.near_expiry_days ?? 30;
   const nearAll = (data?.near_expiry ?? []) as any[];
@@ -134,6 +135,12 @@ export default async function ExpiryPage({
             </div>
           </div>
         </div>
+
+        {errorMsg && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {errorMsg}
+          </div>
+        )}
 
         <form method="get" action="/inventory/expiry" className="mt-3 no-print">
           <div className="flex flex-wrap items-end gap-2">

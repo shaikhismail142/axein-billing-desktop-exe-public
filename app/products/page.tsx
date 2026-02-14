@@ -1,6 +1,6 @@
 // app/products/page.tsx
 import Link from "next/link";
-import { headers } from "next/headers";
+import { getServerRequestContext } from "@/app/lib/server-request";
 import { SelectionProvider } from "./_components/selection";
 import { MasterCheckbox, RowCheckbox } from "./_components/checks";
 import BulkTray from "./_components/BulkTray";
@@ -49,13 +49,6 @@ function parseIntSafe(v: unknown, def: number) {
 function clamp(n: number, min: number, max: number) {
   return Math.min(Math.max(n, min), max);
 }
-function buildBaseUrl() {
-  const hdrs = headers();
-  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host");
-  const proto = hdrs.get("x-forwarded-proto") ?? "http";
-  if (!host) return "";
-  return `${proto}://${host}`;
-}
 function materialFromSku(sku?: string | null) {
   if (!sku) return null;
   const t = sku.toUpperCase();
@@ -82,7 +75,10 @@ function fmtUpdated(ts?: string | null) {
 }
 
 /* ---------- Data fetch ---------- */
-async function fetchProducts(searchParams: PageParams): Promise<ProductsResponse> {
+async function fetchProducts(
+  searchParams: PageParams,
+  ctx: ReturnType<typeof getServerRequestContext>
+): Promise<ProductsResponse> {
   const page = clamp(parseIntSafe(searchParams.page, 1), 1, 1_000_000);
   const perPage = clamp(parseIntSafe(searchParams.perPage, 20), 1, 200);
   const q = typeof searchParams.q === "string" ? searchParams.q.trim() : "";
@@ -109,7 +105,10 @@ async function fetchProducts(searchParams: PageParams): Promise<ProductsResponse
   if (category) qs.set("category", category);
   if (low) qs.set("low", low);
 
-  const res = await fetch(`${buildBaseUrl()}/api/products?${qs}`, { cache: "no-store" });
+  const res = await fetch(`${ctx.baseUrl}/api/products?${qs}`, {
+    cache: "no-store",
+    headers: ctx.authHeaders,
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Products API failed (${res.status}): ${text || res.statusText}`);
@@ -117,9 +116,9 @@ async function fetchProducts(searchParams: PageParams): Promise<ProductsResponse
   return res.json();
 }
 
-async function fetchCategories(): Promise<string[]> {
+async function fetchCategories(ctx: ReturnType<typeof getServerRequestContext>): Promise<string[]> {
   try {
-    const res = await fetch(`${buildBaseUrl()}/api/categories`, { cache: "no-store" });
+    const res = await fetch(`${ctx.baseUrl}/api/categories`, { cache: "no-store", headers: ctx.authHeaders });
     if (!res.ok) return [];
     const data = await res.json();
     const items = Array.isArray(data?.items) ? data.items : [];
@@ -164,6 +163,7 @@ function PerPagePicker({ qs, value }: { qs: URLSearchParams; value: number }) {
 
 /* ---------- Page ---------- */
 export default async function ProductsPage({ searchParams }: { searchParams: PageParams }) {
+  const ctx = getServerRequestContext();
   const q = typeof searchParams.q === "string" ? searchParams.q : "";
   const category = typeof searchParams.category === "string" ? searchParams.category : "";
   const sort = (typeof searchParams.sort === "string" ? searchParams.sort : "id") as
@@ -182,7 +182,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pag
   let errorMsg = "";
   let categories: string[] = [];
   try {
-    [data, categories] = await Promise.all([fetchProducts(searchParams), fetchCategories()]);
+    [data, categories] = await Promise.all([fetchProducts(searchParams, ctx), fetchCategories(ctx)]);
   } catch (err: any) {
     errorMsg = err?.message || "Failed to load products";
   }

@@ -103,7 +103,8 @@ export function readSessionFromRequest(req: Request) {
 }
 
 export function makeSessionCookie(token: string) {
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${SESSION_TTL_SECONDS}; HttpOnly; SameSite=Lax`;
+  // Session cookie: requires login again after app/browser closes.
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`;
 }
 
 export function makeClearedSessionCookie() {

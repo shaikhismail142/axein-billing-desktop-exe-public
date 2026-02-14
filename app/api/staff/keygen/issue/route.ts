@@ -247,10 +247,14 @@ export async function POST(req: Request) {
     const payloadB64u = toBase64Url(JSON.stringify(payload));
     const signatureB64u = toBase64Url(Buffer.from(signature, "base64"));
     const packedToken = `L-${payload.license_key}.${payloadB64u}.${signatureB64u}`;
+    const activationJson = { ...payload, signature };
 
     return NextResponse.json({
       ok: true,
       mode,
+      activation_token: packedToken,
+      activation_json: activationJson,
+      activation_json_string: JSON.stringify(activationJson, null, 2),
       payload,
       signature,
       packed_token: packedToken,

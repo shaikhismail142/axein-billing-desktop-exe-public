@@ -79,6 +79,27 @@ export async function resolveAccessContext(req: Request): Promise<AccessContext>
 
   const session = readSessionFromRequest(req);
   if (session) {
+    // Enforce user status on every request (prevents stale cookies after disable/reject).
+    const statusRs = await pool
+      .query(
+        `SELECT lower(status) AS status
+           FROM users
+          WHERE id = $1
+            AND business_id = $2
+          LIMIT 1`,
+        [session.user_id, session.business_id]
+      )
+      .catch(() => null);
+    const status = String(statusRs?.rows?.[0]?.status || "").toLowerCase();
+    if (status !== "active") {
+      return {
+        businessId: session.business_id,
+        userId: 0,
+        permissions: [],
+        revenueVisible: false,
+      };
+    }
+
     const [roles, permissions] = await Promise.all([
       getUserRoles(session.user_id, session.business_id),
       getUserPermissionCodes(session.user_id, session.business_id),

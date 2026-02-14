@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -19,13 +17,14 @@ export default function LoginPage() {
         const res = await fetch("/api/auth/session", { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (res.ok && data?.authenticated) {
-          router.replace("/dashboard");
+          // Full navigation avoids WebView cookie propagation issues.
+          window.location.replace("/dashboard");
         }
       } catch {
         // ignore
       }
     })();
-  }, [router]);
+  }, []);
 
   function update(key: "email" | "password" | "business_code", value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -45,7 +44,8 @@ export default function LoginPage() {
       if (!res.ok || !data?.ok) {
         throw new Error(String(data?.error || "Login failed"));
       }
-      router.replace("/dashboard");
+      // Full navigation avoids WebView cookie propagation issues.
+      window.location.assign("/dashboard");
     } catch (err: any) {
       setError(String(err?.message || "Login failed"));
     } finally {
@@ -107,4 +107,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

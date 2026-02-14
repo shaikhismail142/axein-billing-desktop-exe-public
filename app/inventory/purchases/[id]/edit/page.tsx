@@ -6,25 +6,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import ItemsEditor from "../../_components/ItemsEditor";
-
-function getBaseUrl() {
-  return process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, "") || "http://localhost:3000";
-}
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 function isNextRedirectErr(err: unknown) {
   const msg = String((err as any)?.message || err || "");
   return msg === "NEXT_REDIRECT";
 }
 
-async function fetchPurchase(id: string) {
-  const res = await fetch(`${getBaseUrl()}/api/purchases/${id}`, { cache: "no-store" });
+async function fetchPurchase(ctx: ReturnType<typeof getServerRequestContext>, id: string) {
+  const res = await fetch(`${ctx.baseUrl}/api/purchases/${id}`, { cache: "no-store", headers: ctx.authHeaders });
   if (!res.ok) return null;
   return res.json().catch(() => null);
 }
 
 async function patchPurchase(formData: FormData) {
   "use server";
-  const origin = getBaseUrl();
+  const ctx = getServerRequestContext();
   const id = String(formData.get("id") || "");
   if (!id) redirect("/inventory/purchases?error=Missing+purchase+id");
 
@@ -54,9 +51,9 @@ async function patchPurchase(formData: FormData) {
     .filter((it: any) => it.product_id && it.qty > 0);
 
   try {
-        const res = await fetch(`${origin}/api/purchases/${id}`, {
+    const res = await fetch(`${ctx.baseUrl}/api/purchases/${id}`, {
       method: "PATCH",
-      headers: { "content-type": "application/json" },
+      headers: { ...ctx.authHeaders, "content-type": "application/json" },
       body: JSON.stringify({
         invoice_no: invoice_no || null,
         invoice_date: invoice_date || null,
@@ -89,7 +86,8 @@ export default async function EditPurchasePage({
   searchParams?: Record<string, string>;
 }) {
   const id = params.id;
-  const resp = await fetchPurchase(id);
+  const ctx = getServerRequestContext();
+  const resp = await fetchPurchase(ctx, id);
   const error = searchParams?.error ? decodeURIComponent(searchParams.error) : "";
 
   if (!resp?.ok) {

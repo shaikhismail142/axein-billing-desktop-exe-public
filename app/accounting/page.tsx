@@ -1,15 +1,7 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { headers } from "next/headers";
-
-function buildBaseUrl() {
-  const hdrs = headers();
-  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host");
-  const proto = hdrs.get("x-forwarded-proto") ?? "http";
-  if (!host) return "";
-  return `${proto}://${host}`;
-}
+import { getServerRequestContext } from "@/app/lib/server-request";
 
 function inr(n: number) {
   const amt = (Number(n || 0)).toLocaleString("en-IN", {
@@ -22,7 +14,8 @@ function inr(n: number) {
 export default async function AccountingPage({ searchParams }: { searchParams?: { q?: string; focus?: string } }) {
   const q = (searchParams?.q || "").trim().toLowerCase();
   const focus = (searchParams?.focus || "").trim().toLowerCase();
-  const res = await fetch(`${buildBaseUrl()}/api/accounting/debts`, { cache: "no-store" });
+  const ctx = getServerRequestContext();
+  const res = await fetch(`${ctx.baseUrl}/api/accounting/debts`, { cache: "no-store", headers: ctx.authHeaders });
   const data = res.ok ? await res.json() : { ok: false, vendors: [], summary: {}, aging: {} };
 
   const vendors = Array.isArray(data?.vendors) ? data.vendors : [];
