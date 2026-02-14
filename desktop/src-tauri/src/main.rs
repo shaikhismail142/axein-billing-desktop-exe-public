@@ -10,6 +10,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use serde_json::Value;
 use tauri::Manager;
 
 const BILLING_PORT: u16 = 3199;
@@ -193,6 +194,40 @@ fn resolve_runtime_root(search_roots: &[PathBuf]) -> Result<PathBuf, String> {
     ))
 }
 
+fn resolve_license_public_key_base64(runtime_root: &Path) -> Option<String> {
+    let candidate = runtime_root.join("vendor").join("keygen").join("info.json");
+    if let Ok(raw) = fs::read_to_string(&candidate) {
+        if let Ok(v) = serde_json::from_str::<Value>(&raw) {
+            let k = v
+                .get("publicKeyBase64")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !k.is_empty() {
+                return Some(k);
+            }
+        }
+    }
+
+    // Fallback: compile-time embedded public key (not secret).
+    // This protects against partial installs missing vendor/keygen/info.json.
+    let embedded = include_str!("../../../tools/license-keygen/info.json");
+    if let Ok(v) = serde_json::from_str::<Value>(embedded) {
+        let k = v
+            .get("publicKeyBase64")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !k.is_empty() {
+            return Some(k);
+        }
+    }
+
+    None
+}
+
 fn stop_runtime(app: &tauri::AppHandle) {
     let state = app.state::<RuntimeState>();
     let mut guard = state.child.lock().expect("runtime lock poisoned");
@@ -295,6 +330,12 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_log))
         .stderr(Stdio::from(stderr_log));
+
+    if std::env::var("LICENSE_PUBLIC_KEY").ok().as_deref().unwrap_or("").trim().is_empty() {
+        if let Some(pubkey) = resolve_license_public_key_base64(&runtime_root) {
+            command.env("LICENSE_PUBLIC_KEY", pubkey);
+        }
+    }
 
     if keygen_private_key.exists() {
         command.env("AXEIN_KEYGEN_PRIVATE_KEY_PATH", &keygen_private_key);

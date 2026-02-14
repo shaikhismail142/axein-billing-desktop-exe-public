@@ -22,6 +22,7 @@ type KeygenResponse = {
   ok: boolean;
   error?: string;
   packed_token?: string;
+  signature?: string;
   summary?: {
     license_key: string;
     valid_from: string;
@@ -56,6 +57,17 @@ function toIsoDateOnly(iso: string) {
 async function copyText(value: string) {
   if (!value) return;
   await navigator.clipboard.writeText(value);
+}
+
+function makeActivationJson(result: KeygenResponse | null) {
+  if (!result?.ok) return "";
+  const payload = result.payload || {};
+  const signature = String(result.signature || "").trim();
+  return JSON.stringify(
+    signature ? { ...payload, signature } : payload,
+    null,
+    2
+  );
 }
 
 export default function StaffKeygenPage() {
@@ -361,9 +373,14 @@ export default function StaffKeygenPage() {
               <textarea className="input" readOnly rows={4} value={result.packed_token || ""} />
             </label>
 
+            <label style={{ display: "block", marginTop: 10 }}>
+              <div className="muted">Activation JSON (includes signature)</div>
+              <textarea className="input" readOnly rows={6} value={makeActivationJson(result)} />
+            </label>
+
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <button className="btn" onClick={() => copyText(result.packed_token || "")}>Copy Token</button>
-              <button className="btn" onClick={() => copyText(JSON.stringify(result.payload || {}, null, 2))}>Copy Payload JSON</button>
+              <button className="btn" onClick={() => copyText(makeActivationJson(result))}>Copy Activation JSON</button>
             </div>
           </div>
         ) : null}
