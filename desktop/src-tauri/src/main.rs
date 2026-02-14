@@ -2,7 +2,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io;
-use std::net::TcpStream;
+use std::net::{TcpListener, TcpStream};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -13,15 +13,38 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tauri::Manager;
 
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
+
 const BILLING_PORT: u16 = 3199;
 const KEYGEN_PORT: u16 = 3299;
 const RUNTIME_HOST: &str = "127.0.0.1";
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[derive(Default)]
 struct RuntimeState {
     child: Mutex<Option<Child>>,
+    port: Mutex<u16>,
+    #[cfg(target_os = "windows")]
+    job: Mutex<Option<HANDLE>>,
+}
+
+impl Default for RuntimeState {
+    fn default() -> Self {
+        Self {
+            child: Mutex::new(None),
+            port: Mutex::new(0),
+            #[cfg(target_os = "windows")]
+            job: Mutex::new(None),
+        }
+    }
 }
 
 fn keygen_app(app: &tauri::AppHandle) -> bool {
@@ -51,6 +74,16 @@ fn runtime_port(app: &tauri::AppHandle) -> u16 {
         KEYGEN_PORT
     } else {
         BILLING_PORT
+    }
+}
+
+fn current_port(app: &tauri::AppHandle) -> u16 {
+    let state = app.state::<RuntimeState>();
+    let port = state.port.lock().expect("port lock poisoned");
+    if *port > 0 {
+        *port
+    } else {
+        runtime_port(app)
     }
 }
 
@@ -235,11 +268,25 @@ fn stop_runtime(app: &tauri::AppHandle) {
         let _ = child.kill();
         let _ = child.wait();
     }
+
+    let mut port = state.port.lock().expect("port lock poisoned");
+    *port = 0;
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut job = state.job.lock().expect("job lock poisoned");
+        if let Some(handle) = job.take() {
+            unsafe {
+                let _ = CloseHandle(handle);
+            }
+        }
+    }
 }
 
-fn child_needs_restart(app: &tauri::AppHandle, port: u16) -> bool {
+fn child_needs_restart(app: &tauri::AppHandle) -> bool {
     let state = app.state::<RuntimeState>();
     let mut guard = state.child.lock().expect("runtime lock poisoned");
+    let port = current_port(app);
 
     match guard.as_mut() {
         Some(child) => match child.try_wait() {
@@ -254,6 +301,85 @@ fn child_needs_restart(app: &tauri::AppHandle, port: u16) -> bool {
             }
         },
         None => true,
+    }
+}
+
+fn pick_available_port(preferred: u16) -> u16 {
+    // Try preferred then next ports; fall back to an ephemeral port.
+    for offset in 0..32u16 {
+        let candidate = preferred.saturating_add(offset);
+        if candidate == 0 {
+            continue;
+        }
+        if let Ok(listener) = TcpListener::bind((RUNTIME_HOST, candidate)) {
+            drop(listener);
+            return candidate;
+        }
+    }
+
+    if let Ok(listener) = TcpListener::bind((RUNTIME_HOST, 0)) {
+        if let Ok(addr) = listener.local_addr() {
+            return addr.port();
+        }
+    }
+
+    preferred
+}
+
+fn desired_main_url(mode: &str, port: u16) -> String {
+    if mode == "keygen" {
+        format!("http://{RUNTIME_HOST}:{port}/staff/keygen")
+    } else {
+        format!("http://{RUNTIME_HOST}:{port}")
+    }
+}
+
+fn navigate_main_window(app: &tauri::AppHandle, mode: &str, port: u16) {
+    if let Some(window) = app.get_webview_window("main") {
+        let url = desired_main_url(mode, port);
+        let script = format!(
+            "try {{ window.location.replace({}); }} catch (e) {{ /* ignore */ }}",
+            serde_json::to_string(&url).unwrap_or_else(|_| "\"\"".to_string())
+        );
+        let _ = window.eval(&script);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn create_kill_on_close_job() -> Option<HANDLE> {
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+        if job == 0 {
+            return None;
+        }
+
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let ok = SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &mut info as *mut _ as *mut _,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+        if ok == 0 {
+            let _ = CloseHandle(job);
+            return None;
+        }
+
+        Some(job)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn assign_pid_to_job(job: HANDLE, pid: u32) -> bool {
+    unsafe {
+        let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+        if process == 0 {
+            return false;
+        }
+        let ok = AssignProcessToJobObject(job, process);
+        let _ = CloseHandle(process);
+        ok != 0
     }
 }
 
@@ -275,7 +401,7 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         || runtime_root.join("AXEIN_KEYGEN_RUNTIME.flag").exists()
         || keygen_private_key.exists();
     let mode = runtime_mode(app);
-    let port = runtime_port(app);
+    let port = pick_available_port(runtime_port(app));
 
     if mode == "keygen" && !keygen_runtime_detected {
         return Err(
@@ -323,6 +449,7 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .env("AXEIN_APP_MODE", mode)
         .env("AXEIN_RUNTIME_PORT", port.to_string())
         .env("AXEIN_INCLUDE_KEYGEN_UI", if mode == "keygen" { "1" } else { "0" })
+        .env("AXEIN_APP_VERSION", app.package_info().version.to_string())
         .env("APP_REQUIRE_BUSINESS_SETUP", "true")
         .env("AXEIN_FORCE_EMBEDDED_DB", "1")
         .env("AXEIN_DB_DATA_DIR", &db_data_dir)
@@ -364,6 +491,16 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("Failed to start local runtime with {:?}: {e}", node_bin_for_err))?;
 
+    #[cfg(target_os = "windows")]
+    {
+        let state = app.state::<RuntimeState>();
+        let mut job_guard = state.job.lock().expect("job lock poisoned");
+        if let Some(handle) = job_guard.or_else(|| create_kill_on_close_job()) {
+            let _ = assign_pid_to_job(handle, child.id());
+            *job_guard = Some(handle);
+        }
+    }
+
     if let Err(err) = wait_for_runtime_ready(&mut child, RUNTIME_HOST, port, Duration::from_secs(45)) {
         let _ = child.kill();
         let _ = child.wait();
@@ -374,14 +511,17 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<(), String> {
         let state = app.state::<RuntimeState>();
         let mut guard = state.child.lock().expect("runtime lock poisoned");
         *guard = Some(child);
+        let mut port_guard = state.port.lock().expect("port lock poisoned");
+        *port_guard = port;
     }
+
+    navigate_main_window(app, mode, port);
 
     Ok(())
 }
 
 fn ensure_runtime(app: &tauri::AppHandle) -> Result<(), String> {
-    let port = runtime_port(app);
-    if child_needs_restart(app, port) {
+    if child_needs_restart(app) {
         stop_runtime(app);
         spawn_runtime(app)?;
     }

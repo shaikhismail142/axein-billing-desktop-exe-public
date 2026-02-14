@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
+import embeddedKeyInfo from "../../../../tools/license-keygen/info.json";
 import {
   verifySignatureEd25519,
   saveActivationRecord,
@@ -23,6 +24,9 @@ function bad(msg: string, status = 400) {
 async function resolveLicensePublicKeyBase64(): Promise<string> {
   const direct = (process.env.LICENSE_PUBLIC_KEY || "").trim();
   if (direct) return direct;
+
+  const embedded = String((embeddedKeyInfo as any)?.publicKeyBase64 || "").trim();
+  if (embedded) return embedded;
 
   const candidates = [
     path.join(process.cwd(), "vendor", "keygen", "info.json"),
