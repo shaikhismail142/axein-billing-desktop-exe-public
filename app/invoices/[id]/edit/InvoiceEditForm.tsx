@@ -18,6 +18,18 @@ type Item = {
 
 type Props = { sale: any; items: Item[] };
 
+type CustomInvoiceField = {
+  id: number;
+  field_key: string;
+  label: string;
+  data_type: "text" | "number" | "date";
+  required: boolean;
+  visible: boolean;
+  position: number;
+};
+
+const RESERVED_INVOICE_FIELD_KEYS = new Set(["payment_mode", "customer_phone"]);
+
 function isoToDateInput(iso?: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -88,10 +100,53 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
   const [isReturn, setIsReturn] = useState<boolean>(!!sale.is_return);
   const [amountPaid, setAmountPaid] = useState<number>(toNum(sale.amount_paid, 0));
   const [paymentMethod, setPaymentMethod] = useState<string>(sale.payment_method || "");
-  const [patientName, setPatientName] = useState<string>(sale.patient_name || "");
-  const [doctorName, setDoctorName] = useState<string>(sale.doctor_name || "");
+  const [customFields, setCustomFields] = useState<CustomInvoiceField[]>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>(() => {
+    const src = sale?.custom_fields && typeof sale.custom_fields === "object" ? sale.custom_fields : {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(src as Record<string, unknown>)) {
+      const key = String(k || "").trim();
+      if (!key) continue;
+      out[key] = v == null ? "" : String(v);
+    }
+    if (!out.patient_name && typeof sale?.patient_name === "string") out.patient_name = sale.patient_name;
+    if (!out.doctor_name && typeof sale?.doctor_name === "string") out.doctor_name = sale.doctor_name;
+    return out;
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ---------- load custom invoice fields (same as Quick Billing) ----------
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`/api/settings/invoice-custom-fields?applies_to=invoice&visible=1`, { cache: "no-store" });
+        if (!r.ok) return;
+        const j = await r.json().catch(() => ({}));
+        const list = Array.isArray(j?.items) ? j.items : [];
+        setCustomFields(
+          list
+            .map((row: any) => ({
+              id: Number(row.id),
+              field_key: String(row.field_key || ""),
+              label: String(row.label || ""),
+              data_type: String(row.data_type || "text") as "text" | "number" | "date",
+              required: Boolean(row.required),
+              visible: row.visible !== false,
+              position: Number(row.position || 100),
+            }))
+            .filter(
+              (row: CustomInvoiceField) =>
+                row.field_key &&
+                row.label &&
+                !RESERVED_INVOICE_FIELD_KEYS.has(String(row.field_key || "").toLowerCase())
+            )
+        );
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   // ---------- computations (per-row + totals) ----------
   const rowsComputed = useMemo(() => {
@@ -146,6 +201,18 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
     e.preventDefault();
     setSaving(true); setError(null);
     try {
+      const orderedCustomFields = [...customFields].sort(
+        (a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id
+      );
+      const customFieldsPayload: Record<string, string> = {};
+      for (const field of orderedCustomFields) {
+        const value = String(customFieldValues[field.field_key] || "").trim();
+        if (field.required && !value) {
+          throw new Error(`Please fill required field: ${field.label}`);
+        }
+        if (value) customFieldsPayload[field.field_key] = value;
+      }
+
       const cleanItems = items.map(it => ({
         product_id: it.product_id ?? null,
         name: String((it.name || "").trim()),
@@ -167,8 +234,9 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
         payment_method: paymentMethod || null,
         customer_id: customerId || undefined,
         customer_name: !customerId ? (customerInput || "").trim() : undefined,
-        patient_name: (patientName || "").trim() || null,
-        doctor_name: (doctorName || "").trim() || null,
+        patient_name: customFieldsPayload.patient_name || null,
+        doctor_name: customFieldsPayload.doctor_name || null,
+        custom_fields: customFieldsPayload,
         items: cleanItems,
       };
 
@@ -263,34 +331,36 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
         </label>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-        <div>
-          <label className="block mb-1 font-semibold">Patient Name</label>
-          <input
-            value={patientName}
-            onChange={(e) => setPatientName(e.target.value)}
-            className="border px-2 py-1 rounded w-full"
-            placeholder="Patient name"
-          />
+      {customFields.length > 0 ? (
+        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            Custom invoice fields (from template/settings)
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
+            {[...customFields]
+              .sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id)
+              .map((field) => (
+                <label key={field.field_key} style={{ display: "block" }}>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {field.label}
+                    {field.required ? " *" : ""}
+                  </div>
+                  <input
+                    className="input"
+                    type={field.data_type === "number" ? "number" : field.data_type === "date" ? "date" : "text"}
+                    value={customFieldValues[field.field_key] || ""}
+                    onChange={(e) =>
+                      setCustomFieldValues((prev) => ({
+                        ...prev,
+                        [field.field_key]: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              ))}
+          </div>
         </div>
-        <div>
-          <label className="block mb-1 font-semibold">Doctor Name</label>
-          <input
-            value={doctorName}
-            onChange={(e) => setDoctorName(e.target.value)}
-            className="border px-2 py-1 rounded w-full"
-            placeholder="Doctor name"
-          />
-        </div>
-        <div>
-          <label className="block mb-1 font-semibold">DC No</label>
-          <input
-            value={sale.dc_no || ""}
-            className="border px-2 py-1 rounded w-full bg-gray-50"
-            readOnly
-          />
-        </div>
-      </div>
+      ) : null}
 
       {/* Items table */}
       <div className="overflow-x-auto">

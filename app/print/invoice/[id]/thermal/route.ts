@@ -33,11 +33,13 @@ function escapeHtml(input: unknown) {
     .replace(/'/g, "&#39;");
 }
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isFinite(id) || id <= 0) {
     return new NextResponse("Invalid invoice id", { status: 400 });
   }
+  const url = new URL(req.url);
+  const embed = url.searchParams.get("embed") === "1";
 
   let biz: any = {
     name: "Your Shop Name",
@@ -86,6 +88,13 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     .trim()
     .toUpperCase();
 
+  const controlsHtml = embed
+    ? ""
+    : `<div class="noprint">
+         <button onclick="window.print()" style="border:1px solid #cbd5e1; padding:6px 10px; border-radius:10px; background:#fff;">Print</button>
+         <button onclick="window.close()" style="border:1px solid #cbd5e1; padding:6px 10px; border-radius:10px; background:#fff;">Close</button>
+       </div>`;
+
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -125,10 +134,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   </style>
 </head>
 <body>
-  <div class="noprint">
-    <button onclick="window.print()" style="border:1px solid #cbd5e1; padding:6px 10px; border-radius:10px; background:#fff;">Print</button>
-    <button onclick="window.close()" style="border:1px solid #cbd5e1; padding:6px 10px; border-radius:10px; background:#fff;">Close</button>
-  </div>
+  ${controlsHtml}
 
   <div class="center">
     <div class="biz">${escapeHtml(biz.name || "Your Shop Name")}</div>
@@ -199,4 +205,3 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
-

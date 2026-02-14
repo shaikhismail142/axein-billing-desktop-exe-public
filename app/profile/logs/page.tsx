@@ -20,28 +20,37 @@ export default function ProfileLogsPage() {
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState<string>("");
   const [entityType, setEntityType] = useState<string>("");
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(100);
+  const [total, setTotal] = useState<number>(0);
 
   const load = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
-      const qp = new URLSearchParams({ limit: "500" });
+      const qp = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
       if (q.trim()) qp.set("q", q.trim());
       if (entityType.trim()) qp.set("entity_type", entityType.trim());
       const res = await fetch(`/api/audit-logs?${qp.toString()}`, { cache: "no-store" });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || "Failed to load logs");
       setItems(Array.isArray(j?.items) ? j.items : []);
+      setTotal(Number.isFinite(Number(j?.total)) ? Number(j.total) : 0);
     } catch (e: any) {
       setError(String(e?.message || "Failed to load logs"));
     } finally {
       setBusy(false);
     }
-  }, [q, entityType]);
+  }, [q, entityType, page, pageSize]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    // Reset pagination when filters change.
+    setPage(1);
+  }, [q, entityType]);
 
   async function download(url: string, fallbackName: string) {
     setBusy(true);
@@ -97,6 +106,18 @@ export default function ProfileLogsPage() {
             placeholder="sale, user, role…"
             style={{ width: 160 }}
           />
+          <label className="muted">Page size</label>
+          <select
+            className="input"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value) || 100)}
+            style={{ width: 120 }}
+          >
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+          </select>
           <button className="btn" onClick={load} disabled={busy}>{busy ? "Refreshing..." : "Refresh"}</button>
           <button
             className="btn"
@@ -128,6 +149,22 @@ export default function ProfileLogsPage() {
         </div>
 
         {error ? <div style={{ color: "var(--danger)", marginTop: 10 }}>{error}</div> : null}
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+          <div className="muted" style={{ fontSize: 12 }}>
+            {total > 0 ? `Showing page ${page} • ${total.toLocaleString()} total` : `Showing page ${page}`}
+          </div>
+          <button className="btn" disabled={busy || page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            Prev
+          </button>
+          <button
+            className="btn"
+            disabled={busy || (total > 0 && page * pageSize >= total)}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </button>
+        </div>
 
         <div className="table-wrap" style={{ marginTop: 12 }}>
           <table className="table">

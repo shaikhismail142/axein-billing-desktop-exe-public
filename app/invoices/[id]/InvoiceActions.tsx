@@ -63,7 +63,7 @@ export default function InvoiceActions({
         {isReturn ? "Unmark Return" : "Mark as Return"}
       </button>
 
-      <Link href={`/print/invoice/${id}`} target="_blank" rel="noopener noreferrer">
+      <Link href={`/print/invoice/${id}`}>
         <button className="border px-3 py-1 rounded" disabled={busy}>Print</button>
       </Link>
 

@@ -55,6 +55,14 @@ function inr(n: number) {
   return `INR (Rs/-) ${amt}`;
 }
 
+function todayInput(): string {
+  const d = new Date();
+  const yyyy = String(d.getFullYear());
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function Billing() {
   // Product search
   const [q, setQ] = useState('');
@@ -71,6 +79,7 @@ export default function Billing() {
   const [saving, setSaving] = useState(false);
 
   // NEW: per-invoice fields (prefilled from settings)
+  const [invoiceDate, setInvoiceDate] = useState<string>(() => todayInput());
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
   const [extraLabel, setExtraLabel] = useState<string>("Service Charge");
@@ -243,6 +252,7 @@ export default function Billing() {
         patient_name: patientName,
         doctor_name: doctorName,
         custom_fields: customFieldsPayload,
+        invoice_date: invoiceDate ? new Date(`${invoiceDate}T00:00:00`).toISOString() : null,
         notes: (notes || "").trim() || null,
         terms: (terms || "").trim() || null,
         extra_label: (extraLabel || "").trim() || null,
@@ -287,6 +297,23 @@ export default function Billing() {
         <div className="card" style={{ padding: 16 }}>
           <h1 style={{ marginTop: 0 }}>Quick Billing</h1>
           <p className="text-xs opacity-70">Create a bill fast — add customer, items, then confirm payment.</p>
+
+        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span className="muted" style={{ fontSize: 12 }}>Invoice date</span>
+              <input
+                className="input"
+                type="date"
+                value={invoiceDate}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+              />
+            </label>
+            <div className="muted" style={{ fontSize: 12 }}>
+              Use this to create bills for older dates.
+            </div>
+          </div>
+        </div>
 
         {/* Customer (optional) */}
         <div className="card" style={{ padding: 12, marginBottom: 12 }}>

@@ -28,7 +28,40 @@ type ReqBody = {
   patient_name?: string | null;
   doctor_name?: string | null;
   dc_no?: string | null;
+  notes?: string | null;
+  terms?: string | null;
+  extra_label?: string | null;
+  extra_amount?: number | string | null;
+  custom_fields?: Record<string, unknown> | null;
 };
+
+function nstr(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s === "" ? null : s;
+}
+
+function normalizeCustomFields(input: unknown): Record<string, string | number> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const out: Record<string, string | number> = {};
+  for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
+    const key = String(rawKey || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 50);
+    if (!key) continue;
+
+    if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+      out[key] = rawValue;
+      continue;
+    }
+    const value = nstr(rawValue);
+    if (value != null) out[key] = value.slice(0, 200);
+  }
+  return out;
+}
 
 const columnCache = new Map<string, Set<string>>();
 async function getColumns(client: any, table: string): Promise<Set<string>> {
@@ -262,6 +295,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     if (hasSalesBusiness) updateVals.push(businessId);
     await client.query(`UPDATE sales SET ${updateCols.join(", ")} WHERE ${updateWhere}`, updateVals);
 
+    const curCustomFields =
+      curMeta.custom_fields && typeof curMeta.custom_fields === "object" && !Array.isArray(curMeta.custom_fields)
+        ? (curMeta.custom_fields as Record<string, unknown>)
+        : {};
+    const nextCustomFields =
+      body.custom_fields && typeof body.custom_fields === "object"
+        ? { ...curCustomFields, ...normalizeCustomFields(body.custom_fields) }
+        : (curMeta.custom_fields ?? null);
+
     const newMeta = {
       ...(curMeta || {}),
       is_return: !!body.is_return,
@@ -269,12 +311,16 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       pending_amount: pendingAmount,
       payment_status: paymentStatus,
       payment_method: paymentMethod || null,
-      notes: typeof (body as any).notes === 'string'
-        ? (body as any).notes
-        : (curMeta.notes ?? null),
+      notes: typeof body.notes === "string" ? body.notes : (curMeta.notes ?? null),
+      terms: typeof body.terms === "string" ? body.terms : (curMeta.terms ?? null),
+      extra_label: typeof body.extra_label === "string" ? body.extra_label : (curMeta.extra_label ?? null),
+      extra_amount: Number.isFinite(Number(body.extra_amount))
+        ? Number(body.extra_amount)
+        : (curMeta.extra_amount ?? null),
       patient_name: typeof body.patient_name === 'string' ? body.patient_name : (curMeta.patient_name ?? null),
       doctor_name: typeof body.doctor_name === 'string' ? body.doctor_name : (curMeta.doctor_name ?? null),
       dc_no: typeof body.dc_no === 'string' ? body.dc_no : (curMeta.dc_no ?? null),
+      custom_fields: nextCustomFields,
     };
 
     if (salesHasMeta) {

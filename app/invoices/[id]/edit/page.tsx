@@ -26,6 +26,7 @@ type Sale = {
   patient_name?: string | null;
   doctor_name?: string | null;
   dc_no?: string | null;
+  custom_fields?: Record<string, unknown> | null;
 };
 
 type Item = {
@@ -57,6 +58,7 @@ export default async function EditInvoicePage({ params }: { params: { id: string
             (s.meta->>'patient_name')                        AS patient_name,
             (s.meta->>'doctor_name')                         AS doctor_name,
             (s.meta->>'dc_no')                               AS dc_no,
+            (s.meta->'custom_fields')                         AS custom_fields,
             c.name AS customer_name
        FROM sales s
        LEFT JOIN customers c ON c.id = s.customer_id

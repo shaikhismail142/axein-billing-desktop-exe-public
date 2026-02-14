@@ -36,11 +36,13 @@ function prettifyFieldLabel(key: string) {
     .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isFinite(id)) {
     return new NextResponse("Invalid invoice id", { status: 400 });
   }
+  const url = new URL(req.url);
+  const embed = url.searchParams.get("embed") === "1";
 
   // business
   let biz: any = {
@@ -111,6 +113,13 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return value != null && String(value).trim() !== "";
   });
 
+  const controlsHtml = embed
+    ? ""
+    : `<div class="noprint" style="margin-bottom:12px">
+         <button onclick="window.close()" style="border:1px solid #e5e7eb; padding:6px 10px; border-radius:6px">Close</button>
+         <button onclick="window.print()" style="border:1px solid #e5e7eb; padding:6px 10px; border-radius:6px">Print</button>
+       </div>`;
+
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -127,7 +136,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       table, tr, td, th { break-inside: avoid; page-break-inside: avoid; }
       .no-break { break-inside: avoid; page-break-inside: avoid; }
     }
-    body { font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:24px; color:#0b1220; }
+    body { font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:${embed ? "0" : "24px"}; color:#0b1220; }
     h1,h2,h3 { margin:0; }
     .row { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
     .muted { color:#64748b; }
@@ -153,10 +162,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   </style>
 </head>
 <body>
-  <div class="noprint" style="margin-bottom:12px">
-    <button onclick="window.close()" style="border:1px solid #e5e7eb; padding:6px 10px; border-radius:6px">Close</button>
-    <button onclick="window.print()" style="border:1px solid #e5e7eb; padding:6px 10px; border-radius:6px">Print</button>
-  </div>
+  ${controlsHtml}
 
   <div class="header">
     <div class="header-top">

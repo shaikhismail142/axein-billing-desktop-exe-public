@@ -114,6 +114,9 @@ export const BUSINESS_TEMPLATES: Record<BusinessType, BusinessTemplate> = {
       { key: "patient_name", label: "Patient Name", required: true, visible: true, data_type: "text" },
       { key: "doctor_name", label: "Doctor Name", required: false, visible: true, data_type: "text" },
       { key: "prescription_no", label: "Prescription No", required: false, visible: true, data_type: "text" },
+      { key: "next_appointment_date", label: "Next Appointment Date", required: false, visible: true, data_type: "date" },
+      { key: "consulting_fee", label: "Consulting Fee", required: false, visible: true, data_type: "number" },
+      { key: "tests_fee", label: "Tests / Lab Fee", required: false, visible: true, data_type: "number" },
     ],
   },
   general_store: {
@@ -168,7 +171,11 @@ export const BUSINESS_TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     workflowHints: ["room-service", "checkin-checkout"],
     defaultInvoiceFields: [
       { key: "room_no", label: "Room No", required: true, visible: true, data_type: "text" },
-      { key: "stay_period", label: "Stay Period", required: false, visible: true, data_type: "text" },
+      { key: "guest_name", label: "Guest Name", required: true, visible: true, data_type: "text" },
+      { key: "check_in_date", label: "Check-in Date", required: false, visible: true, data_type: "date" },
+      { key: "check_out_date", label: "Check-out Date", required: false, visible: true, data_type: "date" },
+      { key: "stay_days", label: "Stay Days", required: false, visible: true, data_type: "number" },
+      { key: "booking_ref", label: "Booking Reference", required: false, visible: true, data_type: "text" },
     ],
   },
   restaurant: {
@@ -179,7 +186,11 @@ export const BUSINESS_TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     workflowHints: ["table-orders", "kitchen-priority"],
     defaultInvoiceFields: [
       { key: "table_no", label: "Table No", required: false, visible: true, data_type: "text" },
+      { key: "token_no", label: "Token No", required: false, visible: true, data_type: "text" },
+      { key: "guests_count", label: "Guests", required: false, visible: true, data_type: "number" },
       { key: "server_name", label: "Server Name", required: false, visible: true, data_type: "text" },
+      { key: "order_type", label: "Order Type (Dine-in/Takeaway)", required: false, visible: true, data_type: "text" },
+      { key: "service_tax_pct", label: "Service Tax %", required: false, visible: true, data_type: "number" },
     ],
   },
   school_institute: {
