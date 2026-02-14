@@ -36,6 +36,32 @@ type KeygenResponse = {
   payload?: Record<string, unknown>;
 };
 
+type HistoryItem = {
+  id: number;
+  created_at: string;
+  mode: string;
+  license_key: string;
+  email: string;
+  business_name: string;
+  business_type: string;
+  usage_mode: string;
+  installation_scope: string;
+  license_type: string;
+  user_limit: number;
+  computer_limit: number;
+  valid_from: string;
+  expires_at: string;
+  activation_token?: string | null;
+};
+
+type HistoryResponse = {
+  ok: boolean;
+  error?: string;
+  items?: HistoryItem[];
+  total?: number;
+  total_pages?: number;
+};
+
 const BUSINESS_TYPES = [
   ["clinic", "Clinic"],
   ["general_store", "General Store"],
@@ -59,6 +85,15 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
+function fmtLocalDateTime(iso: string) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString("en-IN");
+  } catch {
+    return iso;
+  }
+}
+
 function makeActivationJson(result: KeygenResponse | null) {
   if (!result?.ok) return "";
   const payload = result.payload || {};
@@ -79,6 +114,16 @@ export default function StaffKeygenPage() {
   const [unlocked, setUnlocked] = useState(false);
   const [available, setAvailable] = useState(true);
   const [superPassword, setSuperPassword] = useState("");
+
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(20);
+  const [historySort, setHistorySort] = useState("created_at");
+  const [historyDir, setHistoryDir] = useState<"asc" | "desc">("desc");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyReloadKey, setHistoryReloadKey] = useState(0);
 
   const [form, setForm] = useState<KeygenForm>({
     mode: "new",
@@ -131,6 +176,48 @@ export default function StaffKeygenPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!unlocked) {
+      setHistoryItems([]);
+      setHistoryTotal(0);
+      setHistoryError(null);
+      setHistoryLoading(false);
+      return;
+    }
+
+    let active = true;
+    (async () => {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      try {
+        const qs = new URLSearchParams({
+          page: String(historyPage),
+          page_size: String(historyPageSize),
+          sort: historySort,
+          dir: historyDir,
+        });
+        const res = await fetch(`/api/staff/keygen/history?${qs.toString()}`, { cache: "no-store" });
+        const data = (await res.json().catch(() => ({}))) as HistoryResponse;
+        if (!active) return;
+        if (!res.ok || !data?.ok) {
+          throw new Error(String((data as any)?.error || "Failed to load issuance history"));
+        }
+        setHistoryItems(Array.isArray(data.items) ? data.items : []);
+        setHistoryTotal(Number(data.total || 0));
+      } catch (e: any) {
+        if (!active) return;
+        setHistoryError(String(e?.message || "Failed to load issuance history"));
+      } finally {
+        if (!active) return;
+        setHistoryLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [unlocked, historyPage, historyPageSize, historySort, historyDir, historyReloadKey]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -154,6 +241,7 @@ export default function StaffKeygenPage() {
       }
       setResult(data);
       setOk("License key generated successfully.");
+      setHistoryReloadKey((n) => n + 1);
       if (data?.summary?.expires_at) {
         update("extend_from_expires_at", toIsoDateOnly(data.summary.expires_at));
         if (form.mode === "new") {
@@ -381,6 +469,151 @@ export default function StaffKeygenPage() {
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
               <button className="btn" onClick={() => copyText(result.packed_token || "")}>Copy Token</button>
               <button className="btn" onClick={() => copyText(makeActivationJson(result))}>Copy Activation JSON</button>
+            </div>
+          </div>
+        ) : null}
+
+        {unlocked ? (
+          <div className="card" style={{ marginTop: 14, padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Issuance History</h3>
+                <div className="muted" style={{ marginTop: 6, fontSize: 13 }}>
+                  Tracks issued licenses for support and renewals.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <select
+                  className="input"
+                  value={historySort}
+                  onChange={(e) => {
+                    setHistorySort(e.target.value);
+                    setHistoryPage(1);
+                  }}
+                  title="Sort by"
+                >
+                  <option value="created_at">Issued At</option>
+                  <option value="expires_at">Expiry Date</option>
+                  <option value="business_name">Business Name</option>
+                  <option value="user_limit">User Limit</option>
+                </select>
+                <select
+                  className="input"
+                  value={historyDir}
+                  onChange={(e) => {
+                    setHistoryDir((e.target.value === "asc" ? "asc" : "desc") as any);
+                    setHistoryPage(1);
+                  }}
+                  title="Sort direction"
+                >
+                  <option value="desc">Desc</option>
+                  <option value="asc">Asc</option>
+                </select>
+                <select
+                  className="input"
+                  value={historyPageSize}
+                  onChange={(e) => {
+                    setHistoryPageSize(Number(e.target.value) || 20);
+                    setHistoryPage(1);
+                  }}
+                  title="Rows per page"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+                <button className="btn" type="button" onClick={() => setHistoryReloadKey((n) => n + 1)} disabled={historyLoading}>
+                  {historyLoading ? "Loading..." : "Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {historyError ? <div style={{ color: "var(--danger)", marginTop: 10 }}>{historyError}</div> : null}
+
+            <div style={{ marginTop: 12, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 880 }}>
+                <thead style={{ background: "var(--thead)", color: "var(--thead-text)" }}>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>Issued</th>
+                    <th style={{ textAlign: "left", padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>Business</th>
+                    <th style={{ textAlign: "left", padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>Email</th>
+                    <th style={{ textAlign: "right", padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>Users</th>
+                    <th style={{ textAlign: "right", padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>PCs</th>
+                    <th style={{ textAlign: "left", padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>Expires</th>
+                    <th style={{ textAlign: "left", padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>License Key</th>
+                    <th style={{ textAlign: "left", padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyItems.length === 0 && !historyLoading ? (
+                    <tr>
+                      <td colSpan={8} style={{ padding: 12, opacity: 0.7 }}>
+                        No licenses issued yet.
+                      </td>
+                    </tr>
+                  ) : null}
+                  {historyItems.map((it) => (
+                    <tr key={it.id}>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)", whiteSpace: "nowrap" }}>
+                        {fmtLocalDateTime(it.created_at)}
+                      </td>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>
+                        <div style={{ fontWeight: 700 }}>{it.business_name}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {it.business_type} • {it.usage_mode}
+                        </div>
+                      </td>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>{it.email}</td>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)", textAlign: "right" }}>
+                        {it.user_limit}
+                      </td>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)", textAlign: "right" }}>
+                        {it.computer_limit}
+                      </td>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)", whiteSpace: "nowrap" }}>
+                        {toIsoDateOnly(it.expires_at)}
+                      </td>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" }}>
+                        {it.license_key}
+                      </td>
+                      <td style={{ padding: "10px 8px", borderBottom: "1px solid var(--glass-brd)" }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button className="btn" type="button" onClick={() => copyText(it.license_key)}>
+                            Copy Key
+                          </button>
+                          {it.activation_token ? (
+                            <button className="btn" type="button" onClick={() => copyText(String(it.activation_token))}>
+                              Copy Token
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+              <div className="muted" style={{ fontSize: 13 }}>
+                Total: <b>{historyTotal}</b>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button className="btn" type="button" onClick={() => setHistoryPage((p) => Math.max(1, p - 1))} disabled={historyPage <= 1 || historyLoading}>
+                  Prev
+                </button>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  Page <b>{historyPage}</b>
+                </div>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setHistoryPage((p) => p + 1)}
+                  disabled={historyLoading || historyPage * historyPageSize >= historyTotal}
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
         ) : null}

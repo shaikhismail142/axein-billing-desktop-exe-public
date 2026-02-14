@@ -11,7 +11,7 @@ function round2(n: number): number {
 function inr(n: number | string | null | undefined) {
   const v = Number(n ?? 0);
   const amt = v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `INR (Rs/-) ${amt}`;
+  return `Rs ${amt}`;
 }
 
 function escapeHtml(input: unknown) {
@@ -39,6 +39,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   }
   const url = new URL(req.url);
   const embed = url.searchParams.get("embed") === "1";
+  const paperMm = url.searchParams.get("paper") === "58" ? 58 : 80;
+  const paperCss = `${paperMm}mm`;
+  const is58 = paperMm === 58;
 
   let biz: any = {
     name: "Your Shop Name",
@@ -104,14 +107,17 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   <meta charset="utf-8" />
   <title>Purchase ${escapeHtml(invoiceNo)}</title>
   <style>
-    @page { size: 80mm auto; margin: 4mm; }
+    @page { size: ${paperCss} auto; margin: ${is58 ? "3mm" : "4mm"}; }
     body {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       margin: 0;
       color: #0b1220;
-      font-size: 12px;
+      font-size: ${is58 ? "10.5px" : "12px"};
       line-height: 1.25;
+      font-variant-numeric: tabular-nums;
     }
+    .paper { width: ${paperCss}; margin: ${embed ? "0" : "12px auto"}; }
+    @media print { .paper { width: auto; margin: 0; } }
     .noprint { display:flex; gap:8px; margin: 0 0 8px 0; }
     @media print {
       .noprint { display:none !important; }
@@ -121,15 +127,15 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     .right { text-align:right; }
     .muted { opacity: 0.75; }
     .hr { border-top: 1px dashed #94a3b8; margin: 8px 0; }
-    h1 { font-size: 14px; margin: 0; font-weight: 800; letter-spacing: 0.08em; }
-    .biz { font-weight: 800; font-size: 13px; }
+    h1 { font-size: ${is58 ? "12px" : "14px"}; margin: 0; font-weight: 800; letter-spacing: 0.08em; }
+    .biz { font-weight: 800; font-size: ${is58 ? "12px" : "13px"}; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     th, td { padding: 2px 0; vertical-align: top; }
     th { font-size: 11px; opacity: .8; border-bottom: 1px dashed #94a3b8; padding-bottom: 4px; }
-    .col-item { width: 54%; }
+    .col-item { width: ${is58 ? "44%" : "48%"}; }
     .col-qty { width: 14%; }
-    .col-rate { width: 16%; }
-    .col-amt { width: 16%; }
+    .col-rate { width: 18%; }
+    .col-amt { width: 20%; }
     .item { word-break: break-word; }
     .totals { margin-top: 6px; }
     .totals .row { display:flex; justify-content: space-between; margin: 2px 0; }
@@ -139,59 +145,61 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 <body>
   ${controlsHtml}
 
-  <div class="center">
-    <div class="biz">${escapeHtml(biz.name || "Your Shop Name")}</div>
-    ${biz.address ? `<div class="muted">${escapeHtml(biz.address)}</div>` : ""}
-    ${biz.phone ? `<div class="muted">Phone: ${escapeHtml(biz.phone)}</div>` : ""}
-    ${biz.gstin ? `<div class="muted">GSTIN: ${escapeHtml(biz.gstin)}</div>` : ""}
-    <div class="hr"></div>
-    <h1>PURCHASE</h1>
-  </div>
-
-  <div style="margin-top:6px">
-    <div><b>No:</b> ${escapeHtml(invoiceNo)}</div>
-    <div><b>Date:</b> ${escapeHtml(fmtDate(invoiceDate))}</div>
-    ${supplierName ? `<div><b>Supplier:</b> ${escapeHtml(supplierName)}</div>` : ""}
-    <div><span class="badge">${escapeHtml(status)}</span></div>
-  </div>
-
-  <div class="hr"></div>
-  <table>
-    <thead>
-      <tr>
-        <th class="col-item">Item</th>
-        <th class="col-qty right">Qty</th>
-        <th class="col-rate right">Rate</th>
-        <th class="col-amt right">Amt</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${lines
-        .map((it: any) => {
-          return `<tr>
-            <td class="item col-item">${escapeHtml(it.name)}</td>
-            <td class="right col-qty">${it.qty ? it.qty.toFixed(2) : "0"}</td>
-            <td class="right col-rate">${escapeHtml(inr(it.rate))}</td>
-            <td class="right col-amt">${escapeHtml(inr(it.amt))}</td>
-          </tr>`;
-        })
-        .join("")}
-    </tbody>
-  </table>
-
-  <div class="hr"></div>
-  <div class="totals">
-    <div class="row"><span>Tax</span><b>${escapeHtml(inr(tax))}</b></div>
-    <div class="row" style="border-top: 1px dashed #94a3b8; padding-top: 4px; margin-top: 4px">
-      <span>Grand Total</span><b>${escapeHtml(inr(total))}</b>
+  <div class="paper">
+    <div class="center">
+      <div class="biz">${escapeHtml(biz.name || "Your Shop Name")}</div>
+      ${biz.address ? `<div class="muted">${escapeHtml(biz.address)}</div>` : ""}
+      ${biz.phone ? `<div class="muted">Phone: ${escapeHtml(biz.phone)}</div>` : ""}
+      ${biz.gstin ? `<div class="muted">GSTIN: ${escapeHtml(biz.gstin)}</div>` : ""}
+      <div class="hr"></div>
+      <h1>PURCHASE</h1>
     </div>
-    <div class="row"><span>Paid</span><b>${escapeHtml(inr(paid))}</b></div>
-    <div class="row"><span>Balance</span><b>${escapeHtml(inr(pending))}</b></div>
-    ${method ? `<div class="row"><span>Method</span><b>${escapeHtml(method)}</b></div>` : ""}
-  </div>
 
-  <div class="hr"></div>
-  <div class="center muted">Thank you</div>
+    <div style="margin-top:6px">
+      <div><b>No:</b> ${escapeHtml(invoiceNo)}</div>
+      <div><b>Date:</b> ${escapeHtml(fmtDate(invoiceDate))}</div>
+      ${supplierName ? `<div><b>Supplier:</b> ${escapeHtml(supplierName)}</div>` : ""}
+      <div><span class="badge">${escapeHtml(status)}</span></div>
+    </div>
+
+    <div class="hr"></div>
+    <table>
+      <thead>
+        <tr>
+          <th class="col-item">Item</th>
+          <th class="col-qty right">Qty</th>
+          <th class="col-rate right">Rate</th>
+          <th class="col-amt right">Amt</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${lines
+          .map((it: any) => {
+            return `<tr>
+              <td class="item col-item">${escapeHtml(it.name)}</td>
+              <td class="right col-qty">${it.qty ? it.qty.toFixed(2) : "0"}</td>
+              <td class="right col-rate">${escapeHtml(inr(it.rate))}</td>
+              <td class="right col-amt">${escapeHtml(inr(it.amt))}</td>
+            </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>
+
+    <div class="hr"></div>
+    <div class="totals">
+      <div class="row"><span>Tax</span><b>${escapeHtml(inr(tax))}</b></div>
+      <div class="row" style="border-top: 1px dashed #94a3b8; padding-top: 4px; margin-top: 4px">
+        <span>Grand Total</span><b>${escapeHtml(inr(total))}</b>
+      </div>
+      <div class="row"><span>Paid</span><b>${escapeHtml(inr(paid))}</b></div>
+      <div class="row"><span>Balance</span><b>${escapeHtml(inr(pending))}</b></div>
+      ${method ? `<div class="row"><span>Method</span><b>${escapeHtml(method)}</b></div>` : ""}
+    </div>
+
+    <div class="hr"></div>
+    <div class="center muted">Thank you</div>
+  </div>
 </body>
 </html>`;
 

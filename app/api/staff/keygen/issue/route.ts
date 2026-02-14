@@ -7,6 +7,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { isBusinessType } from "@/app/lib/business-templates";
 import { isKeygenUnlocked } from "@/app/lib/keygen-session";
+import { pool } from "@/lib/db";
 
 type Body = {
   mode?: "new" | "extend";
@@ -248,6 +249,37 @@ export async function POST(req: Request) {
     const signatureB64u = toBase64Url(Buffer.from(signature, "base64"));
     const packedToken = `L-${payload.license_key}.${payloadB64u}.${signatureB64u}`;
     const activationJson = { ...payload, signature };
+
+    try {
+      await pool.query(
+        `INSERT INTO keygen_license_issues
+           (mode, license_key, email, business_name, business_type, usage_mode, installation_scope, license_type,
+            user_limit, computer_limit, valid_from, expires_at, features, activation_token, payload_json)
+         VALUES
+           ($1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12, $13::jsonb, $14, $15::jsonb)`,
+        [
+          mode,
+          payload.license_key,
+          payload.email,
+          payload.business_name,
+          payload.business_type,
+          payload.usage_mode,
+          payload.installation_scope,
+          payload.license_type,
+          payload.user_limit,
+          payload.computer_limit,
+          payload.valid_from,
+          payload.expires_at,
+          JSON.stringify(payload.features || []),
+          packedToken,
+          JSON.stringify(payload),
+        ]
+      );
+    } catch (e) {
+      // History should never block license issuance.
+      console.warn("Keygen history insert failed:", e);
+    }
 
     return NextResponse.json({
       ok: true,

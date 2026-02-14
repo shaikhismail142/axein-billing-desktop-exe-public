@@ -405,7 +405,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <main className="mx-auto max-w-5xl p-4 md:p-6">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+        <div className="card" style={{ padding: 16 }}>
           Loading settings…
         </div>
       </main>
@@ -459,7 +459,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <section className="rounded-2xl border bg-white p-4 shadow-sm">
+      <section className="card" style={{ padding: 16 }}>
         <h2 className="mb-3 text-lg font-semibold">Appearance</h2>
         <p className="mb-3 text-sm opacity-80">
           Choose UI mode and color preset for backgrounds, controls, and navigation accents.
@@ -523,7 +523,7 @@ export default function SettingsPage() {
       </section>
 
       {/* Business Settings */}
-      <section className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+      <section className="card" style={{ padding: 16 }}>
         <h2 className="mb-4 text-lg font-semibold">Business Profile</h2>
 
         {error && (
@@ -603,8 +603,8 @@ export default function SettingsPage() {
                   <div className="mt-3">
                     <div className="text-xs opacity-70 mb-1">Preview</div>
                     <div
-                      className="rounded-xl border p-3 inline-flex items-center justify-center bg-white"
-                      style={{ minHeight: 80, minWidth: 180 }}
+                      className="rounded-xl border p-3 inline-flex items-center justify-center"
+                      style={{ minHeight: 80, minWidth: 180, background: "var(--glass-bg)", borderColor: "var(--glass-brd)" }}
                     >
                       {/* Using <img> deliberately so the same URL works in server-side PDF rendering */}
                       {!logoPreviewError ? (
@@ -658,7 +658,7 @@ export default function SettingsPage() {
       </section>
 
       {/* Invoice Defaults */}
-      <section className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+      <section className="card" style={{ padding: 16 }}>
         <h2 className="mb-3 text-lg font-semibold">Invoice Defaults</h2>
         {okInvDef && (
           <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-800/40 dark:bg-emerald-900/20">
@@ -682,8 +682,8 @@ export default function SettingsPage() {
       </section>
 
       {/* Activation & Trial */}
-      <section className="rounded-2xl border bg-white p-0 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-        <div className="flex items-center justify-between border-b p-4 dark:border-neutral-800">
+      <section className="card" style={{ padding: 0 }}>
+        <div className="flex items-center justify-between border-b p-4" style={{ borderColor: "var(--glass-brd)" }}>
           <h2 className="text-lg font-semibold">Activation & Extend License</h2>
           <span className="text-xs opacity-70">Paste a new key to renew/upgrade seats or validity</span>
         </div>
@@ -693,7 +693,7 @@ export default function SettingsPage() {
       </section>
 
       {/* Template reset */}
-      <section className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+      <section className="card" style={{ padding: 16 }}>
         <h2 className="text-lg font-semibold">Setup Wizard</h2>
         <p className="mt-1 text-sm opacity-80">
           Re-run the setup wizard to review activation and update template/navigation defaults. License stays intact.
@@ -704,7 +704,7 @@ export default function SettingsPage() {
       </section>
 
       {/* Backup & Restore */}
-      <section className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+      <section className="card" style={{ padding: 16 }}>
         <h2 className="text-lg font-semibold">Admin • Backups</h2>
         <p className="mt-1 text-sm opacity-80">
           Download a <strong>.zip</strong> archive (no password).<br />
