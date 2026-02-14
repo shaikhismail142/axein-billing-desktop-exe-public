@@ -1,5 +1,9 @@
 // app/api/license/verify-key/route.ts
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
+import fs from "node:fs/promises";
+import path from "node:path";
 import {
   verifySignatureEd25519,
   saveActivationRecord,
@@ -14,6 +18,30 @@ function bad(msg: string, status = 400) {
     { ok: false, error: msg },
     { status, headers: { "Cache-Control": "no-store" } }
   );
+}
+
+async function resolveLicensePublicKeyBase64(): Promise<string> {
+  const direct = (process.env.LICENSE_PUBLIC_KEY || "").trim();
+  if (direct) return direct;
+
+  const candidates = [
+    path.join(process.cwd(), "vendor", "keygen", "info.json"),
+    path.join(process.cwd(), "tools", "license-keygen", "info.json"),
+    path.resolve(process.cwd(), "..", "tools", "license-keygen", "info.json"),
+    path.resolve(process.cwd(), "..", "..", "tools", "license-keygen", "info.json"),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const raw = await fs.readFile(candidate, "utf8");
+      const parsed = JSON.parse(raw);
+      const k = String(parsed?.publicKeyBase64 || "").trim();
+      if (k) return k;
+    } catch {
+      // continue
+    }
+  }
+  return "";
 }
 
 // Token format: "L-<LICENSE_KEY>.<base64url(payload)>.<base64url(signature)>"
@@ -164,8 +192,13 @@ export async function POST(req: Request) {
       return bad("Incomplete license payload");
     }
 
-    const PUBLIC_KEY = process.env.LICENSE_PUBLIC_KEY || "";
-    if (!PUBLIC_KEY) return bad("Server missing LICENSE_PUBLIC_KEY", 500);
+    const PUBLIC_KEY = await resolveLicensePublicKeyBase64();
+    if (!PUBLIC_KEY) {
+      return bad(
+        "Server missing license public key. Reinstall the app or contact AxEin support.",
+        500
+      );
+    }
 
     // Verify signature: pass payload object (without signature)
     const ok = verifySignatureEd25519(

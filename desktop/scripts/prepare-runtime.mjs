@@ -15,6 +15,7 @@ const publicSrc = path.join(root, "public");
 const migrationsSrc = path.join(root, "db", "migrations");
 const pgliteDistSrc = path.join(root, "node_modules", "@electric-sql", "pglite", "dist");
 const keygenPrivateKeySrc = path.join(root, "tools", "license-keygen", "ed25519-private.pem");
+const licensePublicInfoSrc = path.join(root, "tools", "license-keygen", "info.json");
 
 const runtimeRoot = path.join(root, "desktop", "runtime");
 const appRoot = path.join(runtimeRoot, "app");
@@ -26,6 +27,7 @@ const migrationsDst = path.join(standaloneDst, "db", "migrations");
 const pgliteDistDst = path.join(standaloneDst, "vendor", "pglite", "dist");
 const pglitePkgDst = path.join(standaloneDst, "vendor", "pglite", "package.json");
 const keygenPrivateKeyDst = path.join(standaloneDst, "vendor", "keygen", "ed25519-private.pem");
+const licensePublicInfoDst = path.join(standaloneDst, "vendor", "keygen", "info.json");
 
 async function exists(p) {
   try {
@@ -109,6 +111,12 @@ async function main() {
       await fs.mkdir(path.dirname(keygenPrivateKeyDst), { recursive: true });
       await fs.copyFile(keygenPrivateKeySrc, keygenPrivateKeyDst);
     }
+  }
+
+  // Always ship the (non-secret) license public key info for offline verification.
+  if (await exists(licensePublicInfoSrc)) {
+    await fs.mkdir(path.dirname(licensePublicInfoDst), { recursive: true });
+    await fs.copyFile(licensePublicInfoSrc, licensePublicInfoDst);
   }
 
   const readme = [
