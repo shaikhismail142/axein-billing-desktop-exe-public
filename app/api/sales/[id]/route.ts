@@ -17,6 +17,7 @@ type ReqItem = {
   exp_date?: string | null;
 };
 type ReqBody = {
+  invoice_date?: string | null;
   is_return?: boolean;
   amount_paid?: number;
   payment_method?: string | null;
@@ -221,6 +222,26 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const addCol = (col: string, val: any) => {
       if (salesCols.has(col)) { updateCols.push(`${col}=$${idx++}`); updateVals.push(val); }
     };
+
+    if (Object.prototype.hasOwnProperty.call(body as any, "invoice_date")) {
+      const raw = (body as any).invoice_date;
+      if (raw === null) {
+        addCol("invoice_date", null);
+      } else if (typeof raw === "string") {
+        const trimmed = raw.trim();
+        if (!trimmed) {
+          addCol("invoice_date", null);
+        } else {
+          const parsed = new Date(trimmed);
+          if (!Number.isFinite(parsed.getTime())) {
+            throw new Error("Invalid invoice_date");
+          }
+          addCol("invoice_date", parsed.toISOString());
+        }
+      } else if (raw !== undefined) {
+        throw new Error("Invalid invoice_date");
+      }
+    }
 
     addCol("subtotal", round2(subtotal));
     addCol("tax_total", round2(tax_total));

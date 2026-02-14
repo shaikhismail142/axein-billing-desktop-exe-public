@@ -29,7 +29,7 @@ type Business = {
   bank_upi?: string;
 };
 
-type ColorTheme = "blue" | "green" | "amber" | "rose";
+type ColorTheme = "blue" | "green" | "amber" | "rose" | "purple" | "slate" | "orange" | "console";
 
 const DEFAULTS: Business = {
   name: '',
@@ -115,7 +115,7 @@ function normalizeStatus(raw: any): LicenseStatus | null {
 }
 
 export default function SettingsPage() {
-  const { mode, setTheme } = useTheme();
+  const { mode, setTheme, uiScale, setUiScale, resetZoom } = useTheme();
   const [form, setForm] = useState<Business>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -182,7 +182,8 @@ export default function SettingsPage() {
     if (typeof window === "undefined") return;
     const saved = localStorage.getItem(COLOR_THEME_STORAGE_KEY);
     const normalized: ColorTheme =
-      saved === "green" || saved === "amber" || saved === "rose" || saved === "blue"
+      saved === "green" || saved === "amber" || saved === "rose" || saved === "blue" ||
+      saved === "purple" || saved === "slate" || saved === "orange" || saved === "console"
         ? saved
         : "blue";
     setColorTheme(normalized);
@@ -491,7 +492,32 @@ export default function SettingsPage() {
               <option value="green">Green</option>
               <option value="amber">Amber</option>
               <option value="rose">Rose</option>
+              <option value="purple">Purple</option>
+              <option value="slate">Grey</option>
+              <option value="orange">Orange</option>
+              <option value="console">Vintage Console</option>
             </select>
+          </label>
+          <label>
+            <div className="muted">UI Scale</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                className="input"
+                style={{ padding: 0, height: 36 }}
+                type="range"
+                min={0.85}
+                max={1.35}
+                step={0.05}
+                value={uiScale}
+                onChange={(e) => setUiScale(Number(e.target.value || 1))}
+              />
+              <div className="tabular-nums" style={{ minWidth: 56 }}>
+                {Math.round(uiScale * 100)}%
+              </div>
+              <button className="btn" type="button" onClick={resetZoom}>
+                Reset
+              </button>
+            </div>
           </label>
         </div>
       </section>
@@ -668,12 +694,12 @@ export default function SettingsPage() {
 
       {/* Template reset */}
       <section className="rounded-2xl border bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
-        <h2 className="text-lg font-semibold">Business Template Reset</h2>
+        <h2 className="text-lg font-semibold">Setup Wizard</h2>
         <p className="mt-1 text-sm opacity-80">
-          Re-run the business/template setup wizard while keeping the current license or trial state intact.
+          Re-run the setup wizard to review activation and update template/navigation defaults. License stays intact.
         </p>
         <div className="mt-3">
-          <Link className="btn btn-primary" href="/register-business">Open Template Setup Wizard</Link>
+          <Link className="btn btn-primary" href="/activate">Open Setup Wizard</Link>
         </div>
       </section>
 

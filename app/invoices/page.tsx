@@ -246,7 +246,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pag
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-2">
                           <Link className="btn-outline" href={`/invoices/${inv.id}`}>View</Link>
-                          <Link className="btn-outline" href={`/invoices/${inv.id}/print`} target="_blank">Print</Link>
+                          <Link className="btn-outline" href={`/print/invoice/${inv.id}`}>Print</Link>
                         </div>
                       </td>
                     </tr>

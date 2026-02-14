@@ -154,14 +154,12 @@ export default async function InvoicePage({ params }: { params: { id: string } }
           >
             Download PDF
           </a>
-          <a
-            href={`/api/invoices/${id}/print`}
+          <Link
+            href={`/print/invoice/${id}`}
             className="rounded-lg border px-4 py-2 text-sm"
-            target="_blank"
-            rel="noopener"
           >
-            Print View
-          </a>
+            Print / Thermal
+          </Link>
           <Link
             href={`/invoices/${id}/edit`}
             className="rounded-lg border px-4 py-2 text-sm hover:bg-gray-50"

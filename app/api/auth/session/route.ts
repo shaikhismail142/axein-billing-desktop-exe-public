@@ -71,4 +71,3 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, authenticated: false, user: null }, { status: 500 });
   }
 }
-

@@ -42,6 +42,8 @@ export default function ActivateWizardPage() {
   const [businessOk, setBusinessOk] = useState<string | null>(null);
 
   const [templateKey, setTemplateKey] = useState("auto");
+  const [templateErr, setTemplateErr] = useState<string | null>(null);
+  const [templateOk, setTemplateOk] = useState<string | null>(null);
 
   useEffect(() => {
     refreshStatus();
@@ -60,7 +62,19 @@ export default function ActivateWizardPage() {
         deviceId: j?.deviceId || j?.status?.deviceId || "unknown-device",
       });
       if (j?.isLicensed || j?.trialActive) {
-        setStep("Business");
+        // If business is already initialized, don't allow re-registering a new business.
+        const ob = await fetch("/api/onboarding/status", { cache: "no-store" })
+          .then((r) => r.json())
+          .catch(() => null);
+        if (ob?.hasBusiness && ob?.hasUsers) {
+          const sess = await fetch("/api/auth/session", { cache: "no-store" })
+            .then((r) => r.json())
+            .catch(() => null);
+          if (sess?.authenticated) setStep("Template");
+          else setStep("Finish");
+        } else {
+          setStep("Business");
+        }
       }
     } catch {
       // ignore
@@ -175,6 +189,33 @@ export default function ActivateWizardPage() {
     router.replace("/dashboard");
   }
 
+  async function applyTemplate() {
+    setBusy(true);
+    setTemplateErr(null);
+    setTemplateOk(null);
+    try {
+      const invoice_layout =
+        templateKey === "a4" ? "a4" : templateKey === "thermal" ? "thermal" : undefined;
+      const res = await fetch("/api/templates/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          business_type: business.business_type,
+          invoice_layout,
+          reset: true,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) throw new Error(j?.error || "Failed to apply template");
+      setTemplateOk("Template saved.");
+      nextStep("Finish");
+    } catch (e: any) {
+      setTemplateErr(String(e?.message || "Failed to apply template"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const progress = useMemo(() => {
     const idx = steps.indexOf(step);
     return ((idx + 1) / steps.length) * 100;
@@ -207,7 +248,7 @@ export default function ActivateWizardPage() {
             msg={licenseMsg}
             err={licenseErr}
             deviceId={status?.deviceId}
-            onNext={() => nextStep("Business")}
+            onNext={() => refreshStatus()}
           />
         )}
         {step === "Business" && (
@@ -227,7 +268,10 @@ export default function ActivateWizardPage() {
             setBusinessType={(v) => setBusiness((s) => ({ ...s, business_type: v }))}
             templateKey={templateKey}
             setTemplateKey={setTemplateKey}
-            onNext={() => nextStep("Finish")}
+            busy={busy}
+            err={templateErr}
+            ok={templateOk}
+            onApply={applyTemplate}
             onBack={prevStep}
           />
         )}
@@ -375,7 +419,7 @@ function BusinessStep({ business, setBusiness, busy, err, ok, onSave, onBack }: 
   );
 }
 
-function TemplateStep({ businessType, setBusinessType, templateKey, setTemplateKey, onNext, onBack }: any) {
+function TemplateStep({ businessType, setBusinessType, templateKey, setTemplateKey, busy, err, ok, onApply, onBack }: any) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600">Step 3 of 4 — Pick template/navigation defaults.</p>
@@ -397,9 +441,17 @@ function TemplateStep({ businessType, setBusinessType, templateKey, setTemplateK
           ]}
         />
       </div>
+      {ok && <div className="text-sm text-emerald-700">{ok}</div>}
+      {err && <div className="text-sm text-rose-700">{err}</div>}
       <div className="flex gap-3">
         <button onClick={onBack} className="rounded-lg border px-4 py-2 text-sm">Back</button>
-        <button onClick={onNext} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white">Continue</button>
+        <button
+          onClick={onApply}
+          disabled={busy}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white disabled:opacity-60"
+        >
+          {busy ? "Saving…" : "Save Template & Continue"}
+        </button>
       </div>
     </div>
   );

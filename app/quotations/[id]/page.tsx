@@ -1,6 +1,5 @@
 // app/quotations/[id]/page.tsx
 import Link from "next/link";
-import PrintButton from "../_components/PrintButton";
 import ConvertToSaleButton from "../_components/ConvertToSaleButton";
 import { notFound } from "next/navigation";
 import { pool } from "@/lib/db";
@@ -71,6 +70,27 @@ export default async function Page({ params }: { params: { id: string } }) {
   }
   const quotation = qRs.rows[0] as Quotation;
 
+  // If this quotation was already converted to a sale/invoice, surface a link for fast navigation.
+  let convertedSale: { id: number; invoice_no: string | null } | null = null;
+  try {
+    const rs = await pool.query(
+      `SELECT id, invoice_no
+         FROM sales
+        WHERE (meta->>'source_quotation_id') = $1
+        ORDER BY id DESC
+        LIMIT 1`,
+      [String(id)]
+    );
+    if (rs.rowCount > 0) {
+      convertedSale = {
+        id: Number(rs.rows[0].id),
+        invoice_no: rs.rows[0].invoice_no ?? null,
+      };
+    }
+  } catch {
+    // ignore if sales/meta schema differs
+  }
+
   // Try to pull optional customer metadata from quotation.meta
   const customerMeta =
     (quotation.meta?.customer_meta as any) ??
@@ -140,6 +160,18 @@ export default async function Page({ params }: { params: { id: string } }) {
             Date: {fmtDate(quotation.quotation_date)}
             {quotation.valid_until ? ` · Valid Until: ${fmtDate(quotation.valid_until)}` : ""}
           </p>
+          {convertedSale ? (
+            <p className="text-sm" style={{ marginTop: 6 }}>
+              Converted to invoice:{" "}
+              <Link
+                className="underline"
+                href={`/invoices/${convertedSale.id}/edit`}
+                title="Open invoice (edit)"
+              >
+                {convertedSale.invoice_no ?? `#${convertedSale.id}`}
+              </Link>
+            </p>
+          ) : null}
           {quotation.customer_name && (
             <p className="mt-1 text-sm">
               <span className="font-medium">Bill To: </span>
@@ -155,10 +187,35 @@ export default async function Page({ params }: { params: { id: string } }) {
           >
             View PDF
           </Link>
-          <PrintButton href={`/api/quotations/${quotation.id}/pdf`} />
+          <Link
+            href={`/print/quotation/${quotation.id}`}
+            className="px-3 py-2 rounded-2xl glass-btn text-sm"
+            title="Choose A4 (PDF) or thermal receipt print"
+          >
+            Print / Thermal
+          </Link>
 
-          {/* Smart convert button that handles "Already converted (sale_id X)" */}
-          <ConvertToSaleButton quotationId={Number(quotation.id)} />
+          {convertedSale ? (
+            <>
+              <Link
+                href={`/invoices/${convertedSale.id}`}
+                className="px-3 py-2 rounded-2xl glass-btn text-sm"
+                title="View invoice"
+              >
+                View Invoice
+              </Link>
+              <Link
+                href={`/invoices/${convertedSale.id}/edit`}
+                className="btn-primary text-sm px-3 py-2 rounded-2xl"
+                title="Edit invoice"
+              >
+                Edit Invoice
+              </Link>
+            </>
+          ) : (
+            /* Smart convert button handles idempotent convert route */
+            <ConvertToSaleButton quotationId={Number(quotation.id)} />
+          )}
 
           <Link href="/quotations" className="glass-btn text-sm">← Back</Link>
         </div>

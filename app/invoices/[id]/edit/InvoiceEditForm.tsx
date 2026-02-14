@@ -18,6 +18,16 @@ type Item = {
 
 type Props = { sale: any; items: Item[] };
 
+function isoToDateInput(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  const yyyy = String(d.getFullYear());
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function InvoiceEditForm({ sale, items: initItems }: Props) {
   const router = useRouter();
 
@@ -71,6 +81,9 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
   // ---------- form state ----------
   const [items, setItems] = useState<Item[]>(
     initItems?.length ? initItems : [{ name: "", gst_slab: 0, qty: 1, unit_price: 0, discount_pct: 0, batch_no: "", exp_date: "" }]
+  );
+  const [invoiceDate, setInvoiceDate] = useState<string>(() =>
+    isoToDateInput(sale.invoice_date || sale.created_at || null)
   );
   const [isReturn, setIsReturn] = useState<boolean>(!!sale.is_return);
   const [amountPaid, setAmountPaid] = useState<number>(toNum(sale.amount_paid, 0));
@@ -148,6 +161,7 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
       if (cleanItems.some(it => !it.name)) throw new Error("Item name cannot be empty.");
 
       const payload = {
+        invoice_date: invoiceDate ? new Date(`${invoiceDate}T00:00:00`).toISOString() : null,
         is_return: !!isReturn,
         amount_paid: toNum(amountPaid, 0),
         payment_method: paymentMethod || null,
@@ -211,6 +225,16 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={isReturn} onChange={e => setIsReturn(e.target.checked)} />
           <span>Return</span>
+        </label>
+
+        <label className="flex items-center gap-2">
+          <span>Invoice Date</span>
+          <input
+            type="date"
+            value={invoiceDate}
+            onChange={(e) => setInvoiceDate(e.target.value)}
+            className="border px-2 py-1 rounded"
+          />
         </label>
 
         <label className="flex items-center gap-2">

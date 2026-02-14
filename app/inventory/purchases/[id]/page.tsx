@@ -61,9 +61,12 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
         <div className="flex gap-2">
           <Link href="/inventory/purchases" className="px-3 py-2 rounded-2xl border border-black/10 bg-[color:var(--surface-1)] hover:bg-[color:var(--surface-2)]">Back</Link>
           <Link href={`/inventory/purchases/${p.id}/edit`} className="px-3 py-2 rounded-2xl border border-black/10 bg-[color:var(--surface-1)] hover:bg-[color:var(--surface-2)]">Edit</Link>
-          <a href={`/api/purchases/${p.id}/pdf`} target="_blank" className="px-3 py-2 rounded-2xl border border-black/10 bg-[color:var(--surface-1)] hover:bg-[color:var(--surface-2)]">
-            Print / PDF
-          </a>
+          <Link
+            href={`/print/purchase/${p.id}`}
+            className="px-3 py-2 rounded-2xl border border-black/10 bg-[color:var(--surface-1)] hover:bg-[color:var(--surface-2)]"
+          >
+            Print / Thermal
+          </Link>
           <form action={deletePurchaseAction}>
             <input type="hidden" name="id" value={String(p.id)} />
             <button className="px-3 py-2 rounded-2xl border border-red-300 bg-red-50 hover:bg-red-100 text-red-700">Delete</button>

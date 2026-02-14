@@ -100,7 +100,6 @@ export default function LoginPage() {
         </form>
 
         <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <a className="btn" href="/signup">New user? Sign Up</a>
           <a className="btn" href="/activate">Go to Activation</a>
         </div>
       </div>

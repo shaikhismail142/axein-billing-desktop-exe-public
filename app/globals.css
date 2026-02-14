@@ -16,6 +16,9 @@
     --popover-bg:   rgba(3,7,18,0.94);
     --popover-text: #ffffff;
 
+    /* UI scale (1.0 = 100%) */
+    --ui-scale:     1;
+
     /* Brand */
     --primary:      #1f4a8f;         /* navy blue */
     --primary-600:  #173b75;         /* deeper navy */
@@ -53,6 +56,31 @@
     --ring:         color-mix(in oklab, var(--primary) 55%, transparent);
   }
 
+  :root[data-color-theme="purple"] {
+    --bg:           #f8f6ff;
+    --surface-2:    rgba(252,250,255,0.92);
+    --primary:      #6d28d9;
+    --primary-600:  #5b21b6;
+    --ring:         color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+
+  :root[data-color-theme="slate"] {
+    --bg:           #f6f7f9;
+    --surface-2:    rgba(247,248,250,0.92);
+    --primary:      #334155;
+    --primary-600:  #1f2937;
+    --muted:        #556273;
+    --ring:         color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+
+  :root[data-color-theme="orange"] {
+    --bg:           #fff6ed;
+    --surface-2:    rgba(255,250,244,0.92);
+    --primary:      #c2410c;
+    --primary-600:  #9a3412;
+    --ring:         color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+
   .dark {
     --bg:           #0b0f1a;         /* deep navy */
     --surface-1:    rgba(16,23,42,0.96);
@@ -72,7 +100,36 @@
     --ring:         color-mix(in oklab, var(--primary) 60%, transparent);
   }
 
-  html { color-scheme: light; }
+  :root[data-color-theme="console"],
+  :root.dark[data-color-theme="console"] {
+    --bg:           #03150b;
+    --surface-1:    rgba(4,24,14,0.96);
+    --surface-2:    rgba(6,38,21,0.74);
+    --text:         #d6ffd0;
+    --muted:        #8fd6ad;
+    --popover-bg:   rgba(1,10,5,0.96);
+    --popover-text: #d6ffd0;
+
+    --primary:      #22c55e;
+    --primary-600:  #16a34a;
+    --success:      #22c55e;
+    --warning:      #f59e0b;
+    --danger:       #fb7185;
+
+    --border:       rgba(190,255,214,0.20);
+    --thead:        rgba(6,40,22,0.96);
+    --thead-text:   #d6ffd0;
+
+    --shadow:       0 14px 36px rgba(0,0,0,0.65);
+    --glass-bg:     rgba(6,36,20,0.70);
+    --glass-brd:    rgba(190,255,214,0.18);
+    --ring:         color-mix(in oklab, var(--primary) 60%, transparent);
+  }
+
+  html {
+    color-scheme: light;
+    font-size: calc(16px * var(--ui-scale));
+  }
   html, body { height: 100%; }
   * { box-sizing: border-box; }
 

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { useTheme } from '@/app/providers/ThemeProvider';
 
 function pageTitle(pathname: string | null) {
   if (!pathname || pathname === '/') return 'Dashboard & Reports';
@@ -26,6 +27,7 @@ export default function Topbar({ onMenu, collapsed }: { onMenu: () => void; coll
   const router = useRouter();
   const title = pageTitle(pathname);
   const [loggingOut, setLoggingOut] = useState(false);
+  const { uiScale, zoomIn, zoomOut, resetZoom } = useTheme();
   const showSessionActions =
     Boolean(pathname) &&
     !pathname!.startsWith('/login') &&
@@ -98,6 +100,37 @@ export default function Topbar({ onMenu, collapsed }: { onMenu: () => void; coll
         <div className="ml-auto flex items-center gap-2">
           {showSessionActions ? (
             <>
+              <button
+                onClick={zoomOut}
+                disabled={uiScale <= 0.86}
+                className="inline-flex items-center justify-center rounded-xl px-3 py-2"
+                style={{ border: '1px solid var(--glass-brd)', background: 'var(--surface-1)', color: 'var(--text)', opacity: uiScale <= 0.86 ? 0.6 : 1 }}
+                aria-label="Zoom out"
+                title="Zoom out"
+              >
+                <span className="text-[14px]" style={{ fontWeight: 800 }}>A-</span>
+              </button>
+              <button
+                onClick={resetZoom}
+                className="inline-flex items-center justify-center rounded-xl px-3 py-2"
+                style={{ border: '1px solid var(--glass-brd)', background: 'var(--surface-1)', color: 'var(--text)' }}
+                aria-label="Reset zoom"
+                title="Reset zoom"
+              >
+                <span className="tabular-nums text-[12px]" style={{ fontWeight: 800 }}>
+                  {Math.round(uiScale * 100)}%
+                </span>
+              </button>
+              <button
+                onClick={zoomIn}
+                disabled={uiScale >= 1.34}
+                className="inline-flex items-center justify-center rounded-xl px-3 py-2"
+                style={{ border: '1px solid var(--glass-brd)', background: 'var(--surface-1)', color: 'var(--text)', opacity: uiScale >= 1.34 ? 0.6 : 1 }}
+                aria-label="Zoom in"
+                title="Zoom in"
+              >
+                <span className="text-[14px]" style={{ fontWeight: 800 }}>A+</span>
+              </button>
               <button
                 onClick={() => router.refresh()}
                 className="inline-flex items-center justify-center rounded-xl px-3 py-2"

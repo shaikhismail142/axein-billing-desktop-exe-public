@@ -42,7 +42,7 @@ export default function ConvertToSaleButton({ quotationId, className }: Props) {
       const err = String(json?.error || '');
       const match = err.match(/Already converted\s*\(sale_id\s*([0-9]+)\)/i);
       if (match?.[1]) {
-        router.push(`/invoices/${match[1]}`);
+        router.push(`/invoices/${match[1]}/edit`);
         return;
       }
 

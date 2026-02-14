@@ -50,6 +50,12 @@ type RoleRow = {
 
 const ROLE_OPTIONS = ["owner", "admin", "manager", "accountant", "billing_staff", "viewer"];
 
+function permissionEntity(code: string) {
+  const parts = String(code || "").split(".");
+  if (parts.length >= 2 && parts[0] === "perm" && parts[1]) return parts[1];
+  return "other";
+}
+
 export default function ProfileUsersPage() {
   const [pendingItems, setPendingItems] = useState<PendingUser[]>([]);
   const [users, setUsers] = useState<BusinessUser[]>([]);
@@ -74,6 +80,15 @@ export default function ProfileUsersPage() {
 
   const [selectedRoleId, setSelectedRoleId] = useState<number>(0);
   const [selectedRolePermCodes, setSelectedRolePermCodes] = useState<string[]>([]);
+
+  const [roleCreate, setRoleCreate] = useState({
+    name: "",
+    code: "",
+    revenue_visible: false,
+  });
+
+  const [permEntityFilter, setPermEntityFilter] = useState<string>("");
+  const [permSearch, setPermSearch] = useState<string>("");
 
   const loadPendingUsers = useCallback(async () => {
     const res = await fetch("/api/admin/users/pending", {
@@ -151,6 +166,30 @@ export default function ProfileUsersPage() {
     [roles, selectedRoleId]
   );
   const seatsFull = (seatUsage?.remaining_seats ?? 1) <= 0;
+
+  const roleCodeOptions = useMemo(() => {
+    const fromApi = roles
+      .map((r) => String(r?.code || "").trim().toLowerCase())
+      .filter(Boolean);
+    return Array.from(new Set([...ROLE_OPTIONS, ...fromApi])).sort();
+  }, [roles]);
+
+  const permissionEntities = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of permissionCatalog) set.add(permissionEntity(p.code));
+    return Array.from(set).sort();
+  }, [permissionCatalog]);
+
+  const filteredPermissionCatalog = useMemo(() => {
+    const entity = permEntityFilter.trim().toLowerCase();
+    const search = permSearch.trim().toLowerCase();
+    return permissionCatalog.filter((p) => {
+      if (entity && permissionEntity(p.code) !== entity) return false;
+      if (!search) return true;
+      const hay = `${p.code} ${p.label} ${p.description || ""}`.toLowerCase();
+      return hay.includes(search);
+    });
+  }, [permissionCatalog, permEntityFilter, permSearch]);
 
   async function approvePendingUser(userId: number) {
     const roleCode = roleByPendingUser[userId] || "billing_staff";
@@ -253,6 +292,43 @@ export default function ProfileUsersPage() {
       await loadRolesAndPermissions();
     } catch (e: any) {
       setError(String(e?.message || "Failed to update role permissions"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function createRole() {
+    if (!roleCreate.name.trim()) {
+      setError("Role name is required");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setOk(null);
+    try {
+      const res = await fetch(`/api/admin/rbac/roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin": "1" },
+        body: JSON.stringify({
+          name: roleCreate.name.trim(),
+          code: roleCreate.code.trim() || undefined,
+          revenue_visible: roleCreate.revenue_visible === true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "Failed to create role");
+
+      const newRoleId = Number(data?.role?.id || 0);
+      setOk(`Role created: ${data?.role?.name || roleCreate.name}`);
+      setRoleCreate({ name: "", code: "", revenue_visible: false });
+      await loadRolesAndPermissions();
+      if (newRoleId > 0) {
+        setSelectedRoleId(newRoleId);
+        setSelectedRolePermCodes([]);
+      }
+    } catch (e: any) {
+      setError(String(e?.message || "Failed to create role"));
     } finally {
       setSaving(false);
     }
@@ -380,7 +456,7 @@ export default function ProfileUsersPage() {
                           }))
                         }
                       >
-                        {ROLE_OPTIONS.map((roleCode) => (
+                        {roleCodeOptions.map((roleCode) => (
                           <option key={roleCode} value={roleCode}>
                             {roleCode}
                           </option>
@@ -457,7 +533,7 @@ export default function ProfileUsersPage() {
               value={createUserForm.role_code}
               onChange={(e) => setCreateUserForm((s) => ({ ...s, role_code: e.target.value }))}
             >
-              {ROLE_OPTIONS.map((roleCode) => (
+              {roleCodeOptions.map((roleCode) => (
                 <option key={roleCode} value={roleCode}>
                   {roleCode}
                 </option>
@@ -547,6 +623,41 @@ export default function ProfileUsersPage() {
         <h3 style={{ marginTop: 0 }}>Role Permissions</h3>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(220px,320px) 1fr", gap: 12 }}>
           <div>
+            <div className="card" style={{ padding: 12, marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Create Custom Role</div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <label>
+                  <div className="muted">Role Name</div>
+                  <input
+                    className="input"
+                    value={roleCreate.name}
+                    onChange={(e) => setRoleCreate((s) => ({ ...s, name: e.target.value }))}
+                    placeholder="e.g. Store Supervisor"
+                  />
+                </label>
+                <label>
+                  <div className="muted">Role Code (optional)</div>
+                  <input
+                    className="input"
+                    value={roleCreate.code}
+                    onChange={(e) => setRoleCreate((s) => ({ ...s, code: e.target.value }))}
+                    placeholder="e.g. store_supervisor"
+                  />
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={roleCreate.revenue_visible}
+                    onChange={(e) => setRoleCreate((s) => ({ ...s, revenue_visible: e.target.checked }))}
+                  />
+                  <span className="muted">Can view revenue reports</span>
+                </label>
+                <button className="btn" disabled={saving} onClick={createRole}>
+                  {saving ? "Saving..." : "Create Role"}
+                </button>
+              </div>
+            </div>
+
             <label>
               <div className="muted">Role</div>
               <select
@@ -578,8 +689,34 @@ export default function ProfileUsersPage() {
           </div>
 
           <div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+              <label className="muted">Entity</label>
+              <select
+                className="input"
+                value={permEntityFilter}
+                onChange={(e) => setPermEntityFilter(e.target.value)}
+              >
+                <option value="">All</option>
+                {permissionEntities.map((ent) => (
+                  <option key={ent} value={ent}>
+                    {ent}
+                  </option>
+                ))}
+              </select>
+              <label className="muted">Search</label>
+              <input
+                className="input"
+                value={permSearch}
+                onChange={(e) => setPermSearch(e.target.value)}
+                placeholder="code/label…"
+                style={{ minWidth: 220 }}
+              />
+              <span className="muted" style={{ fontSize: 12 }}>
+                Showing {filteredPermissionCatalog.length}/{permissionCatalog.length}
+              </span>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
-              {permissionCatalog.map((permission) => (
+              {filteredPermissionCatalog.map((permission) => (
                 <label key={permission.id} className="card" style={{ padding: 10, display: "flex", gap: 8 }}>
                   <input
                     type="checkbox"

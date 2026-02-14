@@ -179,7 +179,6 @@ export default async function PrintInvoice({ params }: { params: { id: string } 
                 addEventListener('load', () => {
                   const b = document.getElementById('printBtn');
                   if (b) b.addEventListener('click', () => window.print());
-                  setTimeout(() => window.print(), 120);
                 });
               `,
             }}

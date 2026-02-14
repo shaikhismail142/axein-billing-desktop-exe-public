@@ -5,16 +5,6 @@ export const dynamic = "force-dynamic";
 
 const cards = [
   {
-    href: "/register-business",
-    title: "Register Business",
-    desc: "Set business type, usage mode, seat count, and owner account for first-time setup.",
-  },
-  {
-    href: "/signup",
-    title: "Sign Up",
-    desc: "Create a new user request that remains pending until admin approval.",
-  },
-  {
     href: "/profile/settings",
     title: "Settings",
     desc: "Business profile, license key activation, invoice defaults, and backup/restore controls.",
@@ -31,8 +21,8 @@ const cards = [
   },
   {
     href: "/profile/logs",
-    title: "Diagnostics Logs",
-    desc: "View and download logs for sharing with AxEin support when issues occur.",
+    title: "Audit Logs",
+    desc: "Review activity history (user changes, access updates, licensing, LAN) and export a support bundle.",
   },
 ];
 

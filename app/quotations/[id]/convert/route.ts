@@ -38,10 +38,38 @@ async function getNextInvoiceNo(client: any): Promise<string> {
 // Here we read the quotation and call INSERTs similarly (without mutating stock if your app does it elsewhere).
 export async function POST(_: NextRequest, { params }: { params: { id: string } }) {
   const db = await getDb();
+  const quotationId = Number(params.id);
+  if (!Number.isFinite(quotationId) || quotationId <= 0) {
+    return NextResponse.json({ error: "Invalid quotation id" }, { status: 400 });
+  }
 
-  const q = (await db.query(`select * from quotations where id = $1`, [params.id])).rows[0];
+  // If already converted, return the existing sale id (idempotent UX).
+  try {
+    const ex = await db.query(
+      `SELECT id, invoice_no
+         FROM sales
+        WHERE (meta->>'source_quotation_id') = $1
+        ORDER BY id DESC
+        LIMIT 1`,
+      [String(quotationId)]
+    );
+    if (ex.rowCount > 0) {
+      const saleId = Number(ex.rows[0].id);
+      return NextResponse.json({
+        ok: true,
+        already: true,
+        sale_id: saleId,
+        invoice_no: ex.rows[0].invoice_no ?? null,
+        redirect: `/invoices/${saleId}/edit`,
+      });
+    }
+  } catch {
+    // ignore if meta/sales schema differs
+  }
+
+  const q = (await db.query(`select * from quotations where id = $1`, [quotationId])).rows[0];
   if (!q) return NextResponse.json({ error: 'Quotation not found' }, { status: 404 });
-  const items = (await db.query(`select * from quotation_items where quotation_id = $1`, [params.id])).rows;
+  const items = (await db.query(`select * from quotation_items where quotation_id = $1`, [quotationId])).rows;
 
   // create sale (reusing your sales schema)
   const client = await db.connect();
@@ -131,7 +159,12 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     }
 
     await client.query("COMMIT");
-    return NextResponse.json({ sale_id: sale.id });
+    return NextResponse.json({
+      ok: true,
+      sale_id: sale.id,
+      invoice_no: sale.invoice_no ?? null,
+      redirect: `/invoices/${sale.id}/edit`,
+    });
   } catch {
     await client.query("ROLLBACK");
     return NextResponse.json({ error: "Failed to convert quotation" }, { status: 500 });

@@ -92,6 +92,27 @@ export async function POST(req: Request) {
     );
     const bootstrapBusinessId = Number(bootstrapBusinessRs.rows?.[0]?.id || 0);
 
+    // Prevent users from registering additional businesses on an already-initialized install.
+    // Fresh installs either have 0 businesses, or a single "bootstrap" business with 0 users.
+    if (bootstrapBusinessId <= 0) {
+      const existingActive = await client.query(
+        `SELECT id
+           FROM businesses
+          WHERE is_active = TRUE
+          LIMIT 1`
+      );
+      if (existingActive.rowCount > 0) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          {
+            error:
+              "Business is already registered on this install. New business registration is restricted to AxEin onboarding.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const codeCandidateRs = await client.query(
       `SELECT COUNT(*)::int AS cnt
          FROM businesses

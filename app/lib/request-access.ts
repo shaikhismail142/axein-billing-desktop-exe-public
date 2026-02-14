@@ -12,6 +12,33 @@ export type AccessContext = {
   revenueVisible: boolean;
 };
 
+async function bestEffortAuditDenied(
+  ctx: AccessContext,
+  req: Request,
+  requiredPermissions: string[],
+  reason: string
+) {
+  try {
+    const url = new URL(req.url);
+    await pool.query(
+      `INSERT INTO audit_logs (business_id, actor_user_id, action, entity_type, entity_id, meta_json)
+       VALUES ($1, $2, 'access.denied', 'http', $3::text, $4::jsonb)`,
+      [
+        ctx.businessId,
+        ctx.userId > 0 ? ctx.userId : null,
+        url.pathname,
+        JSON.stringify({
+          method: req.method,
+          required_permissions: requiredPermissions,
+          reason,
+        }),
+      ]
+    );
+  } catch {
+    // never block primary response on audit logging
+  }
+}
+
 function isAdminBypass(req: Request): boolean {
   if (process.env.DISABLE_ADMIN_CHECK === "1") return true;
   if (process.env.AXEIN_ALLOW_ADMIN_HEADER !== "1") return false;
@@ -162,6 +189,7 @@ export async function requireRevenueAccess(req: Request): Promise<
   const hasReports = ctx.permissions.includes("perm.reports.view");
 
   if (!hasReports || !ctx.revenueVisible) {
+    await bestEffortAuditDenied(ctx, req, ["perm.reports.view", "perm.view.revenue_summary"], "revenue_restricted");
     return {
       ok: false,
       response: NextResponse.json(
@@ -196,6 +224,7 @@ export async function requireAnyPermission(
 
   const ctx = await resolveAccessContext(req);
   if (!permissionCodes.some((code) => ctx.permissions.includes(code))) {
+    await bestEffortAuditDenied(ctx, req, permissionCodes, "missing_any_permission");
     return { ok: false, response: NextResponse.json({ error: errorMessage }, { status: 403 }) };
   }
 
@@ -224,6 +253,7 @@ export async function requireAllPermissions(
 
   const ctx = await resolveAccessContext(req);
   if (!permissionCodes.every((code) => ctx.permissions.includes(code))) {
+    await bestEffortAuditDenied(ctx, req, permissionCodes, "missing_all_permissions");
     return { ok: false, response: NextResponse.json({ error: errorMessage }, { status: 403 }) };
   }
 

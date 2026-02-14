@@ -15,6 +15,53 @@ type LoginBody = {
   business_code?: string;
 };
 
+async function resolveBusinessIdForLoginAttempt(businessCode: string): Promise<number | null> {
+  try {
+    if (businessCode) {
+      const rs = await pool.query(
+        `SELECT id
+           FROM businesses
+          WHERE is_active = TRUE
+            AND lower(code) = $1
+          LIMIT 1`,
+        [businessCode.toLowerCase()]
+      );
+      if (rs.rowCount) return Number(rs.rows[0].id);
+    }
+    const rs = await pool.query(
+      `SELECT id
+         FROM businesses
+        WHERE is_active = TRUE
+        ORDER BY updated_at DESC NULLS LAST, id DESC
+        LIMIT 1`
+    );
+    if (rs.rowCount) return Number(rs.rows[0].id);
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function audit(
+  businessId: number | null,
+  action: string,
+  entityType: string,
+  entityId: string | null,
+  actorUserId: number | null,
+  meta: Record<string, unknown>
+) {
+  if (!businessId || businessId <= 0) return;
+  try {
+    await pool.query(
+      `INSERT INTO audit_logs (business_id, actor_user_id, action, entity_type, entity_id, meta_json)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+      [businessId, actorUserId, action, entityType, entityId, JSON.stringify(meta || {})]
+    );
+  } catch {
+    // never block auth on audit failures
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as LoginBody;
@@ -46,11 +93,22 @@ export async function POST(req: Request) {
       [email, businessCode]
     );
     if (!userRs.rowCount) {
+      const bid = await resolveBusinessIdForLoginAttempt(businessCode);
+      await audit(bid, "auth.login.failed", "user", email, null, {
+        business_code: businessCode || null,
+        reason: "user_not_found",
+      });
       return NextResponse.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
 
     const user = userRs.rows[0] as any;
     if (String(user.status || "").toLowerCase() !== "active") {
+      await audit(Number(user.business_id), "auth.login.denied", "user", String(user.id), null, {
+        email,
+        business_code: String(user.business_code || ""),
+        reason: "user_not_active",
+        status: String(user.status || ""),
+      });
       return NextResponse.json(
         { ok: false, error: "User is not active. Please wait for admin approval." },
         { status: 403 }
@@ -60,6 +118,11 @@ export async function POST(req: Request) {
     const passwordHash = String(user.password_hash || "");
     const passwordOk = await bcrypt.compare(password, passwordHash);
     if (!passwordOk) {
+      await audit(Number(user.business_id), "auth.login.failed", "user", String(user.id), null, {
+        email,
+        business_code: String(user.business_code || ""),
+        reason: "invalid_password",
+      });
       return NextResponse.json({ ok: false, error: "Invalid credentials" }, { status: 401 });
     }
 
@@ -79,6 +142,12 @@ export async function POST(req: Request) {
       business_id: Number(user.business_id),
       email: String(user.email || ""),
       full_name: String(user.full_name || ""),
+      role_codes: roleCodes,
+    });
+
+    await audit(Number(user.business_id), "auth.login.success", "user", String(user.id), Number(user.id), {
+      email,
+      business_code: String(user.business_code || ""),
       role_codes: roleCodes,
     });
 
@@ -107,4 +176,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Login failed" }, { status: 500 });
   }
 }
-

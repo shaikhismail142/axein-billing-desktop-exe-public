@@ -30,6 +30,20 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // These legacy onboarding routes should not be accessible from the customer app UI.
+  if (pathname.startsWith("/register-business")) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/activate";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+  if (pathname.startsWith("/signup")) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   // In customer billing runtime, staff keygen UI must stay inaccessible.
   if (!keygenMode && pathname.startsWith("/staff/keygen")) {
     const url = req.nextUrl.clone();
@@ -49,8 +63,6 @@ export async function middleware(req: NextRequest) {
   // Allow activation routes and license APIs themselves
   if (
     pathname.startsWith("/activate") ||
-    pathname.startsWith("/register-business") ||
-    pathname.startsWith("/signup") ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/staff/keygen")
   ) {
