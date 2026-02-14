@@ -4,6 +4,10 @@ export type BusinessType =
   | "spa_saloon"
   | "hardware_store"
   | "mobile_store"
+  | "pharmacy"
+  | "boutique"
+  | "electronics_store"
+  | "bakery"
   | "hotel"
   | "restaurant"
   | "school_institute";
@@ -86,6 +90,24 @@ const NAV_LABEL_OVERRIDES: Record<BusinessType, Partial<Record<TemplateNavKey, s
     billing: "Device Billing",
     inventory: "Device Inventory",
   },
+  pharmacy: {
+    billing: "Counter Billing",
+    inventory: "Medicine Stock",
+    purchases: "Supplier Purchases",
+  },
+  boutique: {
+    billing: "Counter Billing",
+    inventory: "Store Inventory",
+  },
+  electronics_store: {
+    billing: "Device Billing",
+    inventory: "Device Inventory",
+  },
+  bakery: {
+    billing: "Counter Billing",
+    quotations: "Catering Quotes",
+    inventory: "Ingredients Stock",
+  },
   hotel: {
     billing: "Front Desk Billing",
     quotations: "Booking Quotes",
@@ -132,7 +154,7 @@ export const BUSINESS_TEMPLATES: Record<BusinessType, BusinessTemplate> = {
   },
   spa_saloon: {
     key: "spa_saloon",
-    label: "Spa/Saloon",
+    label: "Spa/Salon",
     invoiceLayout: "a4",
     navigation: [...COMMON_NAV],
     workflowHints: ["service-bundles", "appointment-aware"],
@@ -161,6 +183,57 @@ export const BUSINESS_TEMPLATES: Record<BusinessType, BusinessTemplate> = {
     defaultInvoiceFields: [
       { key: "imei_no", label: "IMEI No", required: true, visible: true, data_type: "text" },
       { key: "warranty_months", label: "Warranty (Months)", required: false, visible: true, data_type: "number" },
+    ],
+  },
+  pharmacy: {
+    key: "pharmacy",
+    label: "Pharmacy",
+    invoiceLayout: "thermal",
+    navigation: [...COMMON_NAV],
+    workflowHints: ["expiry-aware", "batch-tracking"],
+    defaultInvoiceFields: [
+      { key: "customer_phone", label: "Customer Phone", required: false, visible: true, data_type: "text" },
+      { key: "prescription_no", label: "Prescription No", required: false, visible: true, data_type: "text" },
+      { key: "doctor_name", label: "Doctor Name", required: false, visible: true, data_type: "text" },
+      { key: "payment_mode", label: "Payment Mode", required: true, visible: true, data_type: "text" },
+    ],
+  },
+  boutique: {
+    key: "boutique",
+    label: "Boutique / Clothing",
+    invoiceLayout: "a4",
+    navigation: [...COMMON_NAV],
+    workflowHints: ["size-color-variants", "returns-exchange"],
+    defaultInvoiceFields: [
+      { key: "customer_phone", label: "Customer Phone", required: false, visible: true, data_type: "text" },
+      { key: "salesperson", label: "Salesperson", required: false, visible: true, data_type: "text" },
+      { key: "alterations_note", label: "Alterations Note", required: false, visible: true, data_type: "text" },
+    ],
+  },
+  electronics_store: {
+    key: "electronics_store",
+    label: "Electronics Store",
+    invoiceLayout: "a4",
+    navigation: [...COMMON_NAV],
+    workflowHints: ["serial-capture", "warranty-note"],
+    defaultInvoiceFields: [
+      { key: "customer_phone", label: "Customer Phone", required: false, visible: true, data_type: "text" },
+      { key: "serial_no", label: "Serial No", required: false, visible: true, data_type: "text" },
+      { key: "warranty_months", label: "Warranty (Months)", required: false, visible: true, data_type: "number" },
+      { key: "payment_mode", label: "Payment Mode", required: true, visible: true, data_type: "text" },
+    ],
+  },
+  bakery: {
+    key: "bakery",
+    label: "Bakery / Cafe",
+    invoiceLayout: "thermal",
+    navigation: [...COMMON_NAV],
+    workflowHints: ["fast-counter", "token-orders"],
+    defaultInvoiceFields: [
+      { key: "token_no", label: "Token No", required: false, visible: true, data_type: "text" },
+      { key: "order_type", label: "Order Type (Dine-in/Takeaway)", required: false, visible: true, data_type: "text" },
+      { key: "customer_phone", label: "Customer Phone", required: false, visible: true, data_type: "text" },
+      { key: "payment_mode", label: "Payment Mode", required: true, visible: true, data_type: "text" },
     ],
   },
   hotel: {
