@@ -29,11 +29,20 @@ const RUNTIME_HOST: &str = "127.0.0.1";
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(target_os = "windows")]
+#[derive(Copy, Clone)]
+struct JobHandle(HANDLE);
+
+#[cfg(target_os = "windows")]
+unsafe impl Send for JobHandle {}
+#[cfg(target_os = "windows")]
+unsafe impl Sync for JobHandle {}
+
 struct RuntimeState {
     child: Mutex<Option<Child>>,
     port: Mutex<u16>,
     #[cfg(target_os = "windows")]
-    job: Mutex<Option<HANDLE>>,
+    job: Mutex<Option<JobHandle>>,
 }
 
 impl Default for RuntimeState {
@@ -277,7 +286,7 @@ fn stop_runtime(app: &tauri::AppHandle) {
         let mut job = state.job.lock().expect("job lock poisoned");
         if let Some(handle) = job.take() {
             unsafe {
-                let _ = CloseHandle(handle);
+                let _ = CloseHandle(handle.0);
             }
         }
     }
@@ -346,10 +355,10 @@ fn navigate_main_window(app: &tauri::AppHandle, mode: &str, port: u16) {
 }
 
 #[cfg(target_os = "windows")]
-fn create_kill_on_close_job() -> Option<HANDLE> {
+fn create_kill_on_close_job() -> Option<JobHandle> {
     unsafe {
         let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
-        if job == 0 {
+        if job.is_null() {
             return None;
         }
 
@@ -366,18 +375,18 @@ fn create_kill_on_close_job() -> Option<HANDLE> {
             return None;
         }
 
-        Some(job)
+        Some(JobHandle(job))
     }
 }
 
 #[cfg(target_os = "windows")]
-fn assign_pid_to_job(job: HANDLE, pid: u32) -> bool {
+fn assign_pid_to_job(job: JobHandle, pid: u32) -> bool {
     unsafe {
         let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
-        if process == 0 {
+        if process.is_null() {
             return false;
         }
-        let ok = AssignProcessToJobObject(job, process);
+        let ok = AssignProcessToJobObject(job.0, process);
         let _ = CloseHandle(process);
         ok != 0
     }
