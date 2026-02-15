@@ -33,6 +33,11 @@ jobs:
       - name: Desktop preflight
         run: npm run desktop:preflight
 
+      - name: Prepare DMG staging dir
+        run: |
+          rm -rf desktop/release/macos-dmg
+          mkdir -p desktop/release/macos-dmg
+
       - name: Build Billing DMG (arm64)
         run: npm run desktop:build:macos
 
@@ -41,6 +46,11 @@ jobs:
         env:
           AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64: ${{ secrets.AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64 }}
         run: npm run desktop:keygen:build:macos
+
+      - name: Collect DMGs (arm64)
+        run: |
+          ls -la desktop/src-tauri/target/release/bundle/dmg || true
+          cp -f desktop/src-tauri/target/release/bundle/dmg/*.dmg desktop/release/macos-dmg/ || true
 
       - name: Add Intel build target
         run: rustup target add x86_64-apple-darwin
@@ -58,10 +68,15 @@ jobs:
           npm run desktop:bundle-node
           npm run desktop:tauri -- build --target x86_64-apple-darwin --config ./desktop/src-tauri/tauri.keygen.macos.conf.json
 
+      - name: Collect DMGs (x86_64)
+        run: |
+          ls -la desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg || true
+          cp -f desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg desktop/release/macos-dmg/ || true
+
       - name: Upload DMG artifacts
         uses: actions/upload-artifact@v4
         with:
           name: axein-desktop-dmg
           if-no-files-found: error
           path: |
-            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            desktop/release/macos-dmg/*.dmg
