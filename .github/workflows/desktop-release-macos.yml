@@ -13,7 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-13, macos-14]
+        # Use a known Intel runner + Apple Silicon runner.
+        # Some GitHub configs no longer support macos-13 in certain regions.
+        os: [macos-12, macos-14]
     runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
@@ -51,4 +53,3 @@ jobs:
           if-no-files-found: error
           path: |
             desktop/src-tauri/target/release/bundle/dmg/*.dmg
-
