@@ -10,13 +10,9 @@ on:
 
 jobs:
   build-dmg:
-    strategy:
-      fail-fast: false
-      matrix:
-        # Use a known Intel runner + Apple Silicon runner.
-        # Some GitHub configs no longer support macos-13 in certain regions.
-        os: [macos-12, macos-14]
-    runs-on: ${{ matrix.os }}
+    # Build both Apple Silicon + Intel DMGs from a single Apple Silicon runner.
+    # This avoids depending on GitHub Intel runner availability.
+    runs-on: macos-14
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -37,19 +33,35 @@ jobs:
       - name: Desktop preflight
         run: npm run desktop:preflight
 
-      - name: Build Billing DMG
+      - name: Build Billing DMG (arm64)
         run: npm run desktop:build:macos
 
-      - name: Build staff Keygen DMG
+      - name: Build staff Keygen DMG (arm64)
         if: ${{ inputs.build_keygen }}
         env:
           AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64: ${{ secrets.AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64 }}
         run: npm run desktop:keygen:build:macos
 
+      - name: Add Intel build target
+        run: rustup target add x86_64-apple-darwin
+
+      - name: Build Billing DMG (x86_64)
+        run: |
+          npm run desktop:bundle-node
+          npm run desktop:tauri -- build --target x86_64-apple-darwin --config ./desktop/src-tauri/tauri.macos.conf.json
+
+      - name: Build staff Keygen DMG (x86_64)
+        if: ${{ inputs.build_keygen }}
+        env:
+          AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64: ${{ secrets.AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64 }}
+        run: |
+          npm run desktop:bundle-node
+          npm run desktop:tauri -- build --target x86_64-apple-darwin --config ./desktop/src-tauri/tauri.keygen.macos.conf.json
+
       - name: Upload DMG artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: axein-desktop-dmg-${{ matrix.os }}
+          name: axein-desktop-dmg
           if-no-files-found: error
           path: |
             desktop/src-tauri/target/release/bundle/dmg/*.dmg
