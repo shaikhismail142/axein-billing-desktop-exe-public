@@ -23,8 +23,10 @@
     "desktop:tauri": "node ./node_modules/@tauri-apps/cli/tauri.js",
     "desktop:dev": "npm run desktop:tauri -- dev --config ./desktop/src-tauri/tauri.conf.json",
     "desktop:build": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.conf.json",
+    "desktop:build:macos": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.macos.conf.json",
     "desktop:keygen:dev": "npm run desktop:tauri -- dev --config ./desktop/src-tauri/tauri.keygen.conf.json",
-    "desktop:keygen:build": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.keygen.conf.json"
+    "desktop:keygen:build": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.keygen.conf.json",
+    "desktop:keygen:build:macos": "npm run desktop:bundle-node && npm run desktop:tauri -- build --config ./desktop/src-tauri/tauri.keygen.macos.conf.json"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",

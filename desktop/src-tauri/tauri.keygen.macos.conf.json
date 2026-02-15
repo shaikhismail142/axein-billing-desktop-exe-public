@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AxEin License Keygen",
+  "version": "1.0.2",
+  "identifier": "com.axein.billing.keygen",
+  "build": {
+    "beforeDevCommand": "npm run desktop:web:dev",
+    "devUrl": "http://127.0.0.1:3001/staff/keygen",
+    "beforeBuildCommand": "node ./desktop/scripts/build-keygen-runtime.mjs"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "AxEin License Keygen",
+        "url": "http://127.0.0.1:3299/staff/keygen",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 1120,
+        "minHeight": 720,
+        "resizable": true,
+        "fullscreen": false,
+        "maximized": true,
+        "center": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg"],
+    "resources": [
+      "../runtime"
+    ]
+  }
+}
+
