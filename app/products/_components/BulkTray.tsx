@@ -1,10 +1,13 @@
 "use client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSelection } from "./selection";
 
-export default function BulkTray({ total, q }: { total: number; q: string }) {
+const FILTER_KEYS_TO_KEEP = new Set(["q", "category", "low"]);
+
+export default function BulkTray({ total }: { total: number }) {
   const { selectedIds, clear, allFiltered, setAllFiltered } = useSelection();
   const router = useRouter();
+  const sp = useSearchParams();
 
   const hasAny = allFiltered || selectedIds.length > 0;
 
@@ -19,9 +22,16 @@ export default function BulkTray({ total, q }: { total: number; q: string }) {
     ) : null;
   }
 
-  const exportHref = allFiltered
-    ? `/api/products/export${q ? `?q=${encodeURIComponent(q)}` : ""}`
-    : `/api/products/export?ids=${selectedIds.join(",")}`;
+  const exportHref = (() => {
+    if (allFiltered) {
+      const params = new URLSearchParams();
+      for (const [k, v] of Array.from(sp.entries())) {
+        if (FILTER_KEYS_TO_KEEP.has(k) && v) params.set(k, v);
+      }
+      return `/api/products/export${params.size ? `?${params.toString()}` : ""}`;
+    }
+    return `/api/products/export?ids=${selectedIds.join(",")}`;
+  })();
 
   const handleDelete = async () => {
     const prompt = allFiltered
@@ -29,14 +39,23 @@ export default function BulkTray({ total, q }: { total: number; q: string }) {
       : `Delete ${selectedIds.length} selected product(s)?`;
     if (!confirm(prompt)) return;
 
+    const payload = allFiltered
+      ? {
+          all: true,
+          ...Object.fromEntries(
+            Array.from(sp.entries()).filter(([k, v]) => FILTER_KEYS_TO_KEEP.has(k) && !!v)
+          ),
+        }
+      : { ids: selectedIds };
+
     const res = await fetch("/api/products/bulk-delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(allFiltered ? { all: true, q } : { ids: selectedIds }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const msg = await res.text().catch(() => "");
-      alert(msg || "Delete failed");
+      alert(msg || `Delete failed (${res.status})`);
       return;
     }
     clear();

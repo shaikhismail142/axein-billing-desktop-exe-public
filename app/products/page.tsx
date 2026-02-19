@@ -233,6 +233,9 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pag
             <p className="muted text-sm">Search by product, category, SKU, or HSN</p>
           </div>
           <div className="flex items-center gap-2">
+            <Link className="px-3 py-2 rounded-xl border" href={makeURL(page)}>
+              Refresh
+            </Link>
             <Link className="px-3 py-2 rounded-xl border" href={exportAllHref}>
               Export CSV
             </Link>
@@ -429,7 +432,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pag
         )}
 
         {/* Bulk tray */}
-        {!errorMsg && <BulkTray total={total} q={q} />}
+        {!errorMsg && <BulkTray total={total} />}
       </SelectionProvider>
     </div>
   );

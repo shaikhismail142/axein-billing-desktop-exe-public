@@ -21,6 +21,16 @@ export async function getUserRoles(userId: number, businessId: number): Promise<
 }
 
 export async function getUserPermissionCodes(userId: number, businessId: number): Promise<string[]> {
+  const roleRs = await pool.query(
+    `SELECT DISTINCT LOWER(r.code) AS code
+       FROM user_role_map m
+       JOIN roles r ON r.id = m.role_id
+      WHERE m.user_id = $1
+        AND (r.business_id = $2 OR r.business_id IS NULL)`,
+    [userId, businessId]
+  );
+  const roleCodes = new Set<string>((roleRs.rows || []).map((r: any) => String(r.code || "").toLowerCase()));
+
   const rs = await pool.query(
     `SELECT DISTINCT p.code
        FROM user_role_map m
@@ -32,7 +42,15 @@ export async function getUserPermissionCodes(userId: number, businessId: number)
       ORDER BY p.code ASC`,
     [userId, businessId]
   );
-  return rs.rows.map((r: any) => String(r.code));
+  const perms = rs.rows.map((r: any) => String(r.code));
+
+  // Defensive fallback: admin/owner should retain module access even if RBAC mappings are incomplete.
+  if (roleCodes.has("owner") || roleCodes.has("admin")) {
+    const all = await pool.query(`SELECT code FROM permissions ORDER BY code ASC`);
+    return (all.rows || []).map((r: any) => String(r.code));
+  }
+
+  return perms;
 }
 
 export function canViewBusinessRevenue(roles: RoleSummary[], permissionCodes: string[]): boolean {

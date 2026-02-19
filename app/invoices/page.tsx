@@ -180,6 +180,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pag
               <a className="btn-outline" href={exportAllHref} download={`invoices_${from || "all"}_${to || "all"}.csv`}>
                 Export CSV
               </a>
+              <Link className="btn-outline" href={makeURL(page)}>
+                Refresh
+              </Link>
 
               <Link className="btn-primary" href="/billing">+ New Sale</Link>
             </div>

@@ -80,7 +80,7 @@ export default function BulkTray({ total }: { total: number }) {
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(text || "Delete failed");
+        throw new Error(text || `Delete failed (${res.status})`);
       }
 
       clear();
@@ -88,7 +88,9 @@ export default function BulkTray({ total }: { total: number }) {
       router.refresh();
     } catch (err) {
       console.error(err);
-      alert("Failed to delete invoices.");
+      const message =
+        err instanceof Error && err.message ? err.message : "Failed to delete invoices.";
+      alert(message);
     } finally {
       setIsDeleting(false);
     }

@@ -43,15 +43,18 @@ async function fetchPurchases(ctx: ReturnType<typeof getServerRequestContext>, q
   try {
     res = await fetch(`${ctx.baseUrl}/api/purchases?${params.toString()}`, { cache: "no-store", headers: ctx.authHeaders });
   } catch {
-    return { rows: [], total: 0 };
+    return { rows: [], total: 0, error: "Could not reach purchases API" };
   }
-  if (!res.ok) return { rows: [], total: 0 };
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return { rows: [], total: 0, error: `Purchases API failed (${res.status}): ${text || res.statusText}` };
+  }
   const data = await res.json().catch(() => ({} as any));
-  if (data?.rows && Number.isFinite(data?.total)) return { rows: data.rows as PurchaseRow[], total: Number(data.total) };
+  if (data?.rows && Number.isFinite(data?.total)) return { rows: data.rows as PurchaseRow[], total: Number(data.total), error: "" };
   // backward compat
-  if (Array.isArray(data)) return { rows: data as PurchaseRow[], total: (data as any[]).length };
-  if (Array.isArray(data?.data)) return { rows: data.data as PurchaseRow[], total: (data.data as any[]).length };
-  return { rows: [], total: 0 };
+  if (Array.isArray(data)) return { rows: data as PurchaseRow[], total: (data as any[]).length, error: "" };
+  if (Array.isArray(data?.data)) return { rows: data.data as PurchaseRow[], total: (data.data as any[]).length, error: "" };
+  return { rows: [], total: 0, error: "Unexpected purchases API response" };
 }
 
 export default async function PurchasesPage({ searchParams }: { searchParams?: Record<string, string> }) {
@@ -60,7 +63,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams?: R
   const page = Math.max(1, Number(searchParams?.page ?? 1));
   const pageSize = 10;
 
-  const { rows, total } = await fetchPurchases(ctx, q, page, pageSize);
+  const { rows, total, error } = await fetchPurchases(ctx, q, page, pageSize);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const makeHref = (nextPage: number, nextQ = q) => {
@@ -78,6 +81,12 @@ export default async function PurchasesPage({ searchParams }: { searchParams?: R
           <p className="text-sm text-[color:var(--muted)]">View purchase bills and incoming stock</p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href={makeHref(page)}
+            className="px-3 py-2 rounded-2xl border border-black/10 bg-[color:var(--surface-1)] hover:bg-[color:var(--surface-2)]"
+          >
+            Refresh
+          </Link>
           <Link href="/inventory/purchases/new" className="px-3 py-2 rounded-2xl border border-black/10 bg-[color:var(--surface-1)] hover:bg-[color:var(--surface-2)]">
             New Purchase
           </Link>
@@ -98,6 +107,13 @@ export default async function PurchasesPage({ searchParams }: { searchParams?: R
           Search
         </button>
       </form>
+
+      {error ? (
+        <div className="rounded-2xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-800">
+          <div className="font-medium">Couldn&apos;t load purchases</div>
+          <div>{error}</div>
+        </div>
+      ) : null}
 
       {rows.length === 0 ? (
         <div className="rounded-2xl border border-black/5 bg-[color:var(--surface-1)] p-6 text-sm">

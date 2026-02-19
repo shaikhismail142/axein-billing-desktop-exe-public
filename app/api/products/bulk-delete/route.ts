@@ -34,6 +34,8 @@ export async function POST(req: Request) {
   const ids: number[] | undefined = Array.isArray(body?.ids) ? body.ids : undefined;
   const all: boolean = !!body?.all;
   const q: string = (body?.q || "").trim();
+  const category: string = (body?.category || "").trim();
+  const lowOnly: boolean = String(body?.low || "").trim() === "1";
 
   if (!all && (!ids || ids.length === 0)) {
     return NextResponse.json({ error: "Provide ids[] or set all=true" }, { status: 400 });
@@ -48,6 +50,16 @@ export async function POST(req: Request) {
     if (q) {
       params.push(`%${q}%`);
       where.push(`(p.name ILIKE $${params.length} OR (p.meta->>'sku') ILIKE $${params.length})`);
+    }
+    if (category) {
+      params.push(category);
+      where.push(`COALESCE(NULLIF(p.category,''), NULLIF(p.meta->>'category','')) = $${params.length}`);
+    }
+    if (lowOnly) {
+      where.push(
+        `COALESCE(NULLIF(p.meta->>'stock_qty','')::int, NULLIF(p.meta->>'stock','')::int, 0)
+         <= COALESCE(NULLIF(p.meta->>'low_stock_threshold','')::int, 0)`
+      );
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const { rowCount } = await pool.query(`DELETE FROM products p ${whereSql}`, params);

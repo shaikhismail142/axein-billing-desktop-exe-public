@@ -112,8 +112,8 @@ export default function ItemsEditor({
       : [emptyRow()]
   );
 
-  // Product picker (datalist) for fast selection without needing to remember IDs.
-  // Loads up to ~2000 products to keep UI snappy on large catalogs.
+  // Product picker (datalist/select) for fast selection without needing to remember IDs.
+  // Loads multiple pages to reduce missing products in larger catalogs.
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [productsErr, setProductsErr] = useState<string | null>(null);
   const productById = useMemo(() => {
@@ -128,13 +128,16 @@ export default function ItemsEditor({
       try {
         setProductsErr(null);
         const out: ProductOption[] = [];
-        const perPage = 200;
-        const maxPages = 10; // 2000
+        const perPage = 500;
+        const maxPages = 50; // up to 25k
         let totalPages = 1;
 
         for (let page = 1; page <= Math.min(maxPages, totalPages); page++) {
           const res = await fetch(`/api/products?page=${page}&perPage=${perPage}`, { cache: "no-store" });
-          if (!res.ok) break;
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(`Products API failed (${res.status}): ${text || res.statusText}`);
+          }
           const j = await res.json().catch(() => ({}));
           const items = Array.isArray(j?.items) ? j.items : [];
           totalPages = Number(j?.totalPages || totalPages || 1);
