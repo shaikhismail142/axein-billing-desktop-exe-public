@@ -95,6 +95,25 @@ async function copyProcessNodeDefault() {
   return { source: sourceNode, target };
 }
 
+async function removeDanglingSymlinks(dir) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await removeDanglingSymlinks(fullPath);
+      continue;
+    }
+    if (!entry.isSymbolicLink()) continue;
+    try {
+      // stat() follows symlinks and throws when the target does not exist.
+      await fs.stat(fullPath);
+    } catch {
+      await fs.rm(fullPath, { force: true });
+      console.warn(`Removed dangling symlink from bundled runtime: ${fullPath}`);
+    }
+  }
+}
+
 async function main() {
   await cleanRuntimeNodeDir();
 
@@ -104,6 +123,10 @@ async function main() {
   } else {
     bundled = await copyProcessNodeDefault();
   }
+
+  // Tauri packaging rejects missing resource paths. Some Node distros include
+  // symlinks (e.g. corepack) whose targets may be absent on CI images.
+  await removeDanglingSymlinks(runtimeNodeDir);
 
   const note = [
     "Bundled Node runtime for AxEin desktop.",
