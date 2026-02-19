@@ -6,6 +6,7 @@ export const revalidate = 0;
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { pool } from "@/lib/db";
+import DownloadButton from "@/app/_components/DownloadButton";
 
 type Sale = {
   id: number;
@@ -147,13 +148,14 @@ export default async function InvoicePage({ params }: { params: { id: string } }
         </div>
 
         <div className="flex gap-2">
-          <a
-            href={`/api/invoices/${id}/pdf`}
+          <DownloadButton
             className="rounded-lg border px-4 py-2 text-sm"
-            download={`invoice-${s.invoice_no || id}.pdf`}
-          >
-            Download PDF
-          </a>
+            url={`/api/invoices/${id}/pdf`}
+            fileName={`invoice-${s.invoice_no || id}.pdf`}
+            label="Download PDF"
+            busyLabel="Generating PDF..."
+            successPrefix="Invoice PDF ready"
+          />
           <Link
             href={`/print/invoice/${id}`}
             className="rounded-lg border px-4 py-2 text-sm"

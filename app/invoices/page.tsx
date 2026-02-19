@@ -6,6 +6,7 @@ import Link from "next/link";
 import { SelectionProvider } from "./_components/selection";
 import { MasterCheckbox, RowCheckbox } from "./_components/checks";
 import BulkTray from "./_components/BulkTray";
+import DownloadButton from "@/app/_components/DownloadButton";
 import { ensureActivated } from "@/app/lib/activation-guard";
 import { getServerRequestContext } from "@/app/lib/server-request";
 
@@ -176,10 +177,14 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pag
 
               <PerPage qs={baseQS} value={perPage} />
 
-              {/* Use <a> for file download */}
-              <a className="btn-outline" href={exportAllHref} download={`invoices_${from || "all"}_${to || "all"}.csv`}>
-                Export CSV
-              </a>
+              <DownloadButton
+                className="btn-outline"
+                url={exportAllHref}
+                fileName={`invoices_${from || "all"}_${to || "all"}.csv`}
+                label="Export CSV"
+                busyLabel="Generating CSV..."
+                successPrefix="Invoice export ready"
+              />
               <Link className="btn-outline" href={makeURL(page)}>
                 Refresh
               </Link>

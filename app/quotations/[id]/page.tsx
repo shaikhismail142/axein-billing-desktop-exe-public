@@ -3,6 +3,7 @@ import Link from "next/link";
 import ConvertToSaleButton from "../_components/ConvertToSaleButton";
 import { notFound } from "next/navigation";
 import { pool } from "@/lib/db";
+import DownloadButton from "@/app/_components/DownloadButton";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -181,12 +182,14 @@ export default async function Page({ params }: { params: { id: string } }) {
         </div>
 
         <div className="flex flex-wrap gap-2 no-print">
-          <Link
-            href={`/api/quotations/${quotation.id}/pdf`}
+          <DownloadButton
             className="btn-primary text-sm px-3 py-2 rounded-2xl"
-          >
-            View PDF
-          </Link>
+            url={`/api/quotations/${quotation.id}/pdf`}
+            fileName={`quotation-${quotation.quotation_number || quotation.id}.pdf`}
+            label="Download PDF"
+            busyLabel="Generating PDF..."
+            successPrefix="Quotation PDF ready"
+          />
           <Link
             href={`/print/quotation/${quotation.id}`}
             className="px-3 py-2 rounded-2xl glass-btn text-sm"

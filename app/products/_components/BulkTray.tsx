@@ -1,6 +1,8 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { useSelection } from "./selection";
+import { downloadGeneratedFile } from "@/app/lib/download-client";
 
 const FILTER_KEYS_TO_KEEP = new Set(["q", "category", "low"]);
 
@@ -8,6 +10,8 @@ export default function BulkTray({ total }: { total: number }) {
   const { selectedIds, clear, allFiltered, setAllFiltered } = useSelection();
   const router = useRouter();
   const sp = useSearchParams();
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
 
   const hasAny = allFiltered || selectedIds.length > 0;
 
@@ -32,6 +36,22 @@ export default function BulkTray({ total }: { total: number }) {
     }
     return `/api/products/export?ids=${selectedIds.join(",")}`;
   })();
+
+  const exportFileName = allFiltered ? "products_filtered.csv" : "products_selected.csv";
+
+  const handleDownload = async () => {
+    if (!exportHref || downloadBusy) return;
+    setDownloadBusy(true);
+    setDownloadMsg(null);
+    const result = await downloadGeneratedFile(exportHref, exportFileName);
+    if (!result.ok) {
+      setDownloadMsg(result.error || "Export failed");
+    } else {
+      setDownloadMsg(`Product export ready: ${result.fileName || exportFileName}`);
+    }
+    setDownloadBusy(false);
+    setTimeout(() => setDownloadMsg(null), 3500);
+  };
 
   const handleDelete = async () => {
     const prompt = allFiltered
@@ -72,9 +92,14 @@ export default function BulkTray({ total }: { total: number }) {
               : `${selectedIds.length} selected`}
           </div>
           <div className="flex items-center gap-2">
-            <a className="px-3 py-2 rounded-xl border" href={exportHref}>
-              {allFiltered ? "Export ALL" : "Export selected"}
-            </a>
+            <button
+              type="button"
+              className="px-3 py-2 rounded-xl border disabled:opacity-60"
+              onClick={handleDownload}
+              disabled={downloadBusy}
+            >
+              {downloadBusy ? "Generating..." : allFiltered ? "Export ALL" : "Export selected"}
+            </button>
             <button className="px-3 py-2 rounded-xl border bg-red-600 text-white" onClick={handleDelete}>
               {allFiltered ? "Delete ALL" : "Delete selected"}
             </button>
@@ -83,6 +108,9 @@ export default function BulkTray({ total }: { total: number }) {
             </button>
           </div>
         </div>
+        {downloadMsg ? (
+          <div className="text-xs text-gray-600 mt-2">{downloadMsg}</div>
+        ) : null}
       </div>
     </div>
   );

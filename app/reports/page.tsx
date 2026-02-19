@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
+import DownloadButton from '@/app/_components/DownloadButton';
 
 const ResponsiveContainer = dynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false });
 const BarChart            = dynamic(() => import('recharts').then(m => m.BarChart),            { ssr: false });
@@ -284,9 +285,30 @@ export default function ReportsPage() {
                 />
                 Include draft purchases
               </label>
-              <a className="btn" href={taxPdfUrl}>Download PDF</a>
-              <a className="btn" href={taxCsvUrl}>Export CSV</a>
-              <a className="btn" href={taxExcelUrl}>Export Excel</a>
+              <DownloadButton
+                className="btn"
+                url={taxPdfUrl}
+                fileName={`gst-summary-${range.from}-${range.to}.pdf`}
+                label="Download PDF"
+                busyLabel="Generating PDF..."
+                successPrefix="GST summary ready"
+              />
+              <DownloadButton
+                className="btn"
+                url={taxCsvUrl}
+                fileName={`gst-summary-${range.from}-${range.to}.csv`}
+                label="Export CSV"
+                busyLabel="Generating CSV..."
+                successPrefix="GST summary ready"
+              />
+              <DownloadButton
+                className="btn"
+                url={taxExcelUrl}
+                fileName={`gst-summary-${range.from}-${range.to}.xlsx`}
+                label="Export Excel"
+                busyLabel="Generating Excel..."
+                successPrefix="GST summary ready"
+              />
             </div>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(0,1fr))', gap:12, marginTop:12 }}>

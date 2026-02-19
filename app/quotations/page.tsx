@@ -4,6 +4,7 @@ import { SelectionProvider } from "./_components/selection";
 import { MasterCheckbox, RowCheckbox } from "./_components/checks";
 import BulkTray from "./_components/BulkTray";
 import { getServerRequestContext } from "@/app/lib/server-request";
+import DownloadButton from "@/app/_components/DownloadButton";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -124,9 +125,14 @@ export default async function Page({ searchParams }: { searchParams: { q?: strin
                       <Link href={`/quotations/${r.id}`} className="glass-btn px-2 py-1">
                         View
                       </Link>
-                      <Link href={`/api/quotations/${r.id}/pdf`} className="glass-btn px-2 py-1">
-                        PDF
-                      </Link>
+                      <DownloadButton
+                        className="glass-btn px-2 py-1"
+                        url={`/api/quotations/${r.id}/pdf`}
+                        fileName={`quotation-${r.quotation_number || r.id}.pdf`}
+                        label="PDF"
+                        busyLabel="Generating..."
+                        successPrefix="Quotation PDF ready"
+                      />
                     </div>
                   </td>
                 </tr>

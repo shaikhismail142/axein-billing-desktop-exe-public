@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSelection } from "./selection";
+import { downloadGeneratedFile } from "@/app/lib/download-client";
 
 /**
  * BulkTray for INVOICES page ONLY.
@@ -22,6 +23,8 @@ export default function BulkTray({ total }: { total: number }) {
   const sp = useSearchParams();
 
   const [isDeleting, setIsDeleting] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
 
   // Build CSV export href for INVOICES
   const csvHref = useMemo(() => {
@@ -50,6 +53,20 @@ export default function BulkTray({ total }: { total: number }) {
     }
     return selectedIds.length ? "invoices_selected.csv" : "invoices_export.csv";
   }, [allFiltered, selectedIds.length, sp]);
+
+  const handleDownload = async () => {
+    if (!csvHref || downloadBusy) return;
+    setDownloadBusy(true);
+    setDownloadMsg(null);
+    const result = await downloadGeneratedFile(csvHref, downloadFileName);
+    if (!result.ok) {
+      setDownloadMsg(result.error || "Export failed");
+    } else {
+      setDownloadMsg(`Invoice export ready: ${result.fileName || downloadFileName}`);
+    }
+    setDownloadBusy(false);
+    setTimeout(() => setDownloadMsg(null), 3500);
+  };
 
   const handleDelete = async () => {
     if (!ALLOW_DELETE || !hasAny || isDeleting) return;
@@ -128,18 +145,16 @@ export default function BulkTray({ total }: { total: number }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <a
+            <button
+              type="button"
               className="px-3 py-2 rounded-xl border disabled:opacity-60"
-              href={csvHref || undefined}
-              download={downloadFileName}
-              aria-disabled={!csvHref}
-              onClick={(e) => {
-                if (!csvHref) e.preventDefault();
-              }}
+              disabled={!csvHref || downloadBusy}
+              aria-disabled={!csvHref || downloadBusy}
+              onClick={handleDownload}
               title={allFiltered ? "Export ALL filtered invoices" : "Export selected invoices"}
             >
-              {allFiltered ? "Export ALL (CSV)" : "Export selected (CSV)"}
-            </a>
+              {downloadBusy ? "Generating..." : allFiltered ? "Export ALL (CSV)" : "Export selected (CSV)"}
+            </button>
 
             {ALLOW_DELETE && (
               <button
@@ -169,6 +184,11 @@ export default function BulkTray({ total }: { total: number }) {
             </button>
           </div>
         </div>
+        {downloadMsg ? (
+          <div className="muted" style={{ marginTop: 6, fontSize: 11, lineHeight: 1.2 }}>
+            {downloadMsg}
+          </div>
+        ) : null}
       </div>
     </div>
   );

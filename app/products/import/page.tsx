@@ -31,6 +31,7 @@ export default function ImportProductsPage() {
   }
 
   function downloadTemplate() {
+    setErr(null);
     const csv =
       "name,category,price,gst_slab,stock_qty,cost_price,low_stock_threshold,sku,brand,hsn_code,unit,exp_date,notes\n" +
       "Shampoo 200ml,cosmetics,120,18,20,70,5,SH-200,Acme,33059011,pcs,2026-12-31,Popular\n";
@@ -41,6 +42,7 @@ export default function ImportProductsPage() {
     a.download = "products_template.csv";
     a.click();
     URL.revokeObjectURL(url);
+    setMsg("Template generated: products_template.csv");
   }
 
   return (

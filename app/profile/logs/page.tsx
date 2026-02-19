@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { downloadGeneratedFile } from "@/app/lib/download-client";
 
 type AuditRow = {
   id: number;
@@ -18,6 +19,7 @@ export default function ProfileLogsPage() {
   const [items, setItems] = useState<AuditRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [q, setQ] = useState<string>("");
   const [entityType, setEntityType] = useState<string>("");
   const [page, setPage] = useState<number>(1);
@@ -55,23 +57,12 @@ export default function ProfileLogsPage() {
   async function download(url: string, fallbackName: string) {
     setBusy(true);
     setError(null);
+    setMessage(null);
     try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || "Download failed");
-      }
-
-      const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") || "";
-      const m = cd.match(/filename="?([^"]+)"?/i);
-      const name = m?.[1] || fallbackName;
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(href);
+      const result = await downloadGeneratedFile(url, fallbackName);
+      if (!result.ok) throw new Error(result.error || "Download failed");
+      setMessage(`File generated: ${result.fileName || fallbackName}`);
+      setTimeout(() => setMessage(null), 3500);
     } catch (e: any) {
       setError(String(e?.message || "Download failed"));
     } finally {
@@ -149,6 +140,7 @@ export default function ProfileLogsPage() {
         </div>
 
         {error ? <div style={{ color: "var(--danger)", marginTop: 10 }}>{error}</div> : null}
+        {message ? <div className="muted" style={{ marginTop: 10 }}>{message}</div> : null}
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
           <div className="muted" style={{ fontSize: 12 }}>

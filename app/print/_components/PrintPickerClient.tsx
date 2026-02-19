@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
+import { downloadGeneratedFile } from "@/app/lib/download-client";
 
 type TabKey = "a4" | "thermal";
 type ThermalPaper = 80 | 58;
@@ -16,18 +17,6 @@ type Props = {
   pdfDownloadSrc?: string | null;
   pdfFallbackName?: string | null;
 };
-
-function parseFilenameFromContentDisposition(cd: string | null): string | null {
-  if (!cd) return null;
-  const m = cd.match(/filename\\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i);
-  const raw = (m?.[1] || m?.[2] || "").trim();
-  if (!raw) return null;
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
 
 function withSearchParam(inputUrl: string, key: string, value: string): string {
   try {
@@ -47,6 +36,7 @@ export default function PrintPickerClient(props: Props) {
   const [thermalPaper, setThermalPaper] = useState<ThermalPaper>(80);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const thermalSrc = useMemo(() => {
@@ -65,21 +55,12 @@ export default function PrintPickerClient(props: Props) {
     if (!props.pdfDownloadSrc) return;
     setBusy(true);
     setError(null);
+    setMessage(null);
     try {
-      const res = await fetch(props.pdfDownloadSrc, { cache: "no-store" });
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || "Download failed");
-      }
-      const blob = await res.blob();
-      const fromHeader = parseFilenameFromContentDisposition(res.headers.get("Content-Disposition"));
-      const name = fromHeader || pdfName;
-      const href = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = href;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(href);
+      const result = await downloadGeneratedFile(props.pdfDownloadSrc, pdfName);
+      if (!result.ok) throw new Error(result.error || "Download failed");
+      setMessage(`PDF generated: ${result.fileName || pdfName}`);
+      setTimeout(() => setMessage(null), 3500);
     } catch (e: any) {
       setError(String(e?.message || "Download failed"));
     } finally {
@@ -130,6 +111,7 @@ export default function PrintPickerClient(props: Props) {
         </div>
 
         {error ? <div style={{ color: "var(--danger)", marginTop: 10 }}>{error}</div> : null}
+        {message ? <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>{message}</div> : null}
       </div>
 
       <div className="card" style={{ padding: 12, marginTop: 12 }}>

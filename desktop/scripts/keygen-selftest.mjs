@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import path from "node:path";
+import net from "node:net";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -8,9 +9,23 @@ const __dirname = path.dirname(__filename);
 const root = path.resolve(__dirname, "..", "..");
 const runtimeCmd = process.execPath;
 const runtimeScript = path.join(root, "desktop", "scripts", "run-local-runtime.mjs");
-const smokePort = Number(process.env.PORT || "3299");
-const baseUrl = `http://127.0.0.1:${smokePort}`;
 const defaultSuperPassword = "AxEin!K3yG3n#2026@Sup3r-Only";
+
+function getAvailablePort(preferredPort = 3299) {
+  const tryPort = (port) =>
+    new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.unref();
+      server.once("error", (err) => reject(err));
+      server.listen(port, "127.0.0.1", () => {
+        const addr = server.address();
+        const picked = typeof addr === "object" && addr ? addr.port : port;
+        server.close(() => resolve(picked));
+      });
+    });
+
+  return tryPort(preferredPort).catch(() => tryPort(0));
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -34,6 +49,8 @@ async function waitHealth(url, timeoutMs = 40000) {
 }
 
 async function main() {
+  const smokePort = Number(await getAvailablePort(Number(process.env.PORT || "3299")));
+  const baseUrl = `http://127.0.0.1:${smokePort}`;
   const child = spawn(runtimeCmd, [runtimeScript], {
     cwd: root,
     env: {

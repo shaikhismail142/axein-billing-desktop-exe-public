@@ -6,6 +6,7 @@ import { MasterCheckbox, RowCheckbox } from "./_components/checks";
 import BulkTray from "./_components/BulkTray";
 import AddCategoryButton from "./_components/AddCategoryButton";
 import ProductsFilters from "./_components/ProductsFilters";
+import DownloadButton from "@/app/_components/DownloadButton";
 
 /* ---------- Types ---------- */
 type Product = {
@@ -236,9 +237,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pag
             <Link className="px-3 py-2 rounded-xl border" href={makeURL(page)}>
               Refresh
             </Link>
-            <Link className="px-3 py-2 rounded-xl border" href={exportAllHref}>
-              Export CSV
-            </Link>
+            <DownloadButton
+              className="px-3 py-2 rounded-xl border"
+              url={exportAllHref}
+              fileName={`products_${category || "all"}_${lowOnly ? "low" : "all"}.csv`}
+              label="Export CSV"
+              busyLabel="Generating CSV..."
+              successPrefix="Product export ready"
+            />
             <Link className="px-3 py-2 rounded-xl border" href="/products/import">
               Import CSV
             </Link>
