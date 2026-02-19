@@ -1,7 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::fs::{self, OpenOptions};
-use std::io;
 use std::net::{TcpListener, TcpStream};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -569,8 +568,9 @@ fn main() {
         .setup(|app| {
             #[cfg(not(debug_assertions))]
             {
-                ensure_runtime(&app.handle())
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                if let Err(err) = ensure_runtime(&app.handle()) {
+                    eprintln!("runtime bootstrap failed: {err}");
+                }
                 start_runtime_watchdog(app.handle().clone());
             }
             Ok(())
