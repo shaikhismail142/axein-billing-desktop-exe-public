@@ -3,6 +3,11 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
+import {
+  computeCustomFieldTotals,
+  getCustomFieldOptions,
+  CustomFieldDataType,
+} from "@/app/lib/custom-fields";
 
 type Item = {
   id?: number;
@@ -22,10 +27,11 @@ type CustomInvoiceField = {
   id: number;
   field_key: string;
   label: string;
-  data_type: "text" | "number" | "date";
+  data_type: CustomFieldDataType;
   required: boolean;
   visible: boolean;
   position: number;
+  config_json?: Record<string, unknown> | null;
 };
 
 const RESERVED_INVOICE_FIELD_KEYS = new Set(["payment_mode", "customer_phone"]);
@@ -100,6 +106,8 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
   const [isReturn, setIsReturn] = useState<boolean>(!!sale.is_return);
   const [amountPaid, setAmountPaid] = useState<number>(toNum(sale.amount_paid, 0));
   const [paymentMethod, setPaymentMethod] = useState<string>(sale.payment_method || "");
+  const [extraLabel, setExtraLabel] = useState<string>(String(sale.extra_label || "Additional Charge"));
+  const [manualExtraAmount, setManualExtraAmount] = useState<number>(Math.max(0, toNum(sale.extra_amount, 0)));
   const [customFields, setCustomFields] = useState<CustomInvoiceField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>(() => {
     const src = sale?.custom_fields && typeof sale.custom_fields === "object" ? sale.custom_fields : {};
@@ -130,10 +138,11 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
               id: Number(row.id),
               field_key: String(row.field_key || ""),
               label: String(row.label || ""),
-              data_type: String(row.data_type || "text") as "text" | "number" | "date",
+              data_type: String(row.data_type || "text") as CustomFieldDataType,
               required: Boolean(row.required),
               visible: row.visible !== false,
               position: Number(row.position || 100),
+              config_json: row.config_json && typeof row.config_json === "object" ? row.config_json : {},
             }))
             .filter(
               (row: CustomInvoiceField) =>
@@ -164,14 +173,36 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
     });
   }, [items]);
 
-    const computed = useMemo(() => {
-      let subtotal = 0, tax_total = 0, total = 0;
+  const lineTotals = useMemo(() => {
+    let subtotal = 0;
+    let tax_total = 0;
+    let total = 0;
     for (const rc of rowsComputed) {
       subtotal += rc.taxable;
       tax_total += rc.tax;
       total += rc.lineTotal;
     }
-    if (isReturn) { subtotal = -subtotal; tax_total = -tax_total; total = -total; }
+    return {
+      subtotal: round2(subtotal),
+      tax_total: round2(tax_total),
+      total: round2(total),
+    };
+  }, [rowsComputed]);
+
+  const customComputed = useMemo(
+    () => computeCustomFieldTotals(customFields, customFieldValues, lineTotals.subtotal),
+    [customFields, customFieldValues, lineTotals.subtotal]
+  );
+
+  const computed = useMemo(() => {
+    let subtotal = lineTotals.subtotal;
+    let tax_total = round2(lineTotals.tax_total + customComputed.extraTaxAmount);
+    let total = round2(subtotal + tax_total + manualExtraAmount + customComputed.extraAmount);
+    if (isReturn) {
+      subtotal = -Math.abs(subtotal);
+      tax_total = -Math.abs(tax_total);
+      total = -Math.abs(total);
+    }
     const balancedue = Math.max(total - toNum(amountPaid, 0), 0);
     return {
       subtotal: round2(subtotal),
@@ -179,7 +210,7 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
       total: round2(total),
       balance: round2(balancedue),
     };
-  }, [rowsComputed, isReturn, amountPaid]);
+  }, [lineTotals, customComputed.extraTaxAmount, customComputed.extraAmount, manualExtraAmount, isReturn, amountPaid]);
 
   // ---------- row ops ----------
   function setItem<K extends keyof Item>(idx: number, key: K, value: Item[K]) {
@@ -206,11 +237,15 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
       );
       const customFieldsPayload: Record<string, string> = {};
       for (const field of orderedCustomFields) {
-        const value = String(customFieldValues[field.field_key] || "").trim();
+        const raw = customFieldValues[field.field_key];
+        const value = raw == null ? "" : String(raw).trim();
         if (field.required && !value) {
           throw new Error(`Please fill required field: ${field.label}`);
         }
         if (value) customFieldsPayload[field.field_key] = value;
+      }
+      for (const [k, v] of Object.entries(customComputed.values || {})) {
+        if (v != null && String(v).trim()) customFieldsPayload[k] = String(v).trim();
       }
 
       const cleanItems = items.map(it => ({
@@ -236,6 +271,14 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
         customer_name: !customerId ? (customerInput || "").trim() : undefined,
         patient_name: customFieldsPayload.patient_name || null,
         doctor_name: customFieldsPayload.doctor_name || null,
+        extra_label: (extraLabel || "").trim() || null,
+        extra_amount: round2(manualExtraAmount + customComputed.extraAmount),
+        extra_tax_amount: round2(customComputed.extraTaxAmount),
+        custom_field_totals: {
+          extra_amount: round2(customComputed.extraAmount),
+          extra_tax_amount: round2(customComputed.extraTaxAmount),
+          taxable_base: round2(customComputed.taxableBase),
+        },
         custom_fields: customFieldsPayload,
         items: cleanItems,
       };
@@ -331,6 +374,31 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
         </label>
       </div>
 
+      <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <div className="grid md:grid-cols-2 gap-3">
+          <label>
+            <div className="muted" style={{ fontSize: 12 }}>Additional Charge Label</div>
+            <input
+              className="input"
+              value={extraLabel}
+              onChange={(e) => setExtraLabel(e.target.value)}
+              placeholder="Service Charge"
+            />
+          </label>
+          <label>
+            <div className="muted" style={{ fontSize: 12 }}>Additional Charge Amount</div>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              step="0.01"
+              value={manualExtraAmount}
+              onChange={(e) => setManualExtraAmount(Math.max(0, toNum(e.target.value, 0)))}
+            />
+          </label>
+        </div>
+      </div>
+
       {customFields.length > 0 ? (
         <div className="card" style={{ padding: 12, marginBottom: 12 }}>
           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
@@ -339,25 +407,74 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
             {[...customFields]
               .sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id)
-              .map((field) => (
-                <label key={field.field_key} style={{ display: "block" }}>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {field.label}
-                    {field.required ? " *" : ""}
-                  </div>
-                  <input
-                    className="input"
-                    type={field.data_type === "number" ? "number" : field.data_type === "date" ? "date" : "text"}
-                    value={customFieldValues[field.field_key] || ""}
-                    onChange={(e) =>
-                      setCustomFieldValues((prev) => ({
-                        ...prev,
-                        [field.field_key]: e.target.value,
-                      }))
-                    }
-                  />
-                </label>
-              ))}
+              .map((field) => {
+                const options = getCustomFieldOptions(field);
+                const value = customFieldValues[field.field_key] || "";
+                const numericType =
+                  field.data_type === "number" ||
+                  field.data_type === "price" ||
+                  field.data_type === "tax_percent";
+                return (
+                  <label key={field.field_key} style={{ display: "block" }}>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {field.label}
+                      {field.required ? " *" : ""}
+                    </div>
+                    {field.data_type === "dropdown" ? (
+                      <select
+                        className="input"
+                        value={value}
+                        onChange={(e) =>
+                          setCustomFieldValues((prev) => ({
+                            ...prev,
+                            [field.field_key]: e.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">Select</option>
+                        {options.map((opt) => (
+                          <option key={`${field.field_key}-${opt.value}`} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : field.data_type === "radio" ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 6 }}>
+                        {options.map((opt) => (
+                          <label key={`${field.field_key}-${opt.value}`} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input
+                              type="radio"
+                              name={field.field_key}
+                              value={opt.value}
+                              checked={value === opt.value}
+                              onChange={(e) =>
+                                setCustomFieldValues((prev) => ({
+                                  ...prev,
+                                  [field.field_key]: e.target.value,
+                                }))
+                              }
+                            />
+                            <span>{opt.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <input
+                        className="input"
+                        type={numericType ? "number" : field.data_type === "date" ? "date" : "text"}
+                        step={field.data_type === "tax_percent" ? "0.01" : undefined}
+                        value={value}
+                        onChange={(e) =>
+                          setCustomFieldValues((prev) => ({
+                            ...prev,
+                            [field.field_key]: e.target.value,
+                          }))
+                        }
+                      />
+                    )}
+                  </label>
+                );
+              })}
           </div>
         </div>
       ) : null}
@@ -467,7 +584,14 @@ export default function InvoiceEditForm({ sale, items: initItems }: Props) {
       <div className="mt-3 flex justify-end">
         <div className="card" style={{ padding: 12, minWidth: 340 }}>
           <Row label="Subtotal" value={inr(computed.subtotal)} />
-          <Row label="Tax" value={inr(computed.tax_total)} />
+          <Row label="Tax" value={inr(lineTotals.tax_total)} />
+          {customComputed.extraTaxAmount !== 0 ? (
+            <Row label="Custom Tax" value={inr(customComputed.extraTaxAmount)} />
+          ) : null}
+          <Row label={extraLabel || "Additional Charge"} value={inr(manualExtraAmount)} />
+          {customComputed.extraAmount !== 0 ? (
+            <Row label="Custom Charges" value={inr(customComputed.extraAmount)} />
+          ) : null}
           <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #e5e7eb", marginTop: 6, paddingTop: 6 }}>
             <span>Total</span><b style={{ fontSize: 18 }}>{inr(computed.total)}</b>
           </div>

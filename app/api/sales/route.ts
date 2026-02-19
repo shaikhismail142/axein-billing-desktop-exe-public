@@ -34,6 +34,8 @@ type NewSaleBody = {
   terms?: string | null;               // NEW
   extra_label?: string | null;         // NEW
   extra_amount?: number | string | null; // NEW
+  extra_tax_amount?: number | string | null;
+  custom_field_totals?: Record<string, unknown> | null;
   custom_fields?: Record<string, unknown> | null;
 
   allow_negative_stock?: boolean;
@@ -529,11 +531,13 @@ export async function POST(req: Request) {
   }
 
   const subtotal = round2(lines.reduce((a, b) => a + b.taxable, 0));
-  const tax_total = round2(lines.reduce((a, b) => a + b.tax, 0));
+  const tax_total_items = round2(lines.reduce((a, b) => a + b.tax, 0));
   discount_total = round2(discount_total);
 
   // NEW: extra
   const extra_amount = round2(Number(payload.extra_amount ?? 0) || 0);
+  const extra_tax_amount = round2(Number(payload.extra_tax_amount ?? 0) || 0);
+  const tax_total = round2(tax_total_items + extra_tax_amount);
   const grand_total = round2(subtotal + tax_total + extra_amount);
 
   const amount_paid = round2(Number(payload.amount_paid ?? 0) || 0);
@@ -611,9 +615,14 @@ export async function POST(req: Request) {
       terms,
       extra_label,
       extra_amount,
+      extra_tax_amount,
       patient_name,
       doctor_name,
       dc_no,
+      custom_field_totals:
+        payload.custom_field_totals && typeof payload.custom_field_totals === "object"
+          ? payload.custom_field_totals
+          : null,
       custom_fields: customFields,
     };
 

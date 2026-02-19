@@ -32,6 +32,8 @@ type ReqBody = {
   terms?: string | null;
   extra_label?: string | null;
   extra_amount?: number | string | null;
+  extra_tax_amount?: number | string | null;
+  custom_field_totals?: Record<string, unknown> | null;
   custom_fields?: Record<string, unknown> | null;
 };
 
@@ -166,7 +168,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       hasSaleItemsBusiness ? [saleId, businessId] : [saleId]
     );
 
-    let subtotal = 0, tax_total = 0, total = 0;
+    let subtotal = 0, tax_total_items = 0, total_items = 0;
     for (const it of items) {
       if (!it.name || isNaN(+it.qty) || isNaN(+it.unit_price))
         return NextResponse.json({ error: "Invalid item values." }, { status: 400 });
@@ -182,7 +184,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       const tax = (taxable * gst) / 100;
       const lineTotal = taxable + tax;
 
-      subtotal += taxable; tax_total += tax; total += lineTotal;
+      subtotal += taxable; tax_total_items += tax; total_items += lineTotal;
 
       const itemMeta = {
         ...(it.batch_no ? { batch_no: String(it.batch_no).trim() } : {}),
@@ -231,7 +233,25 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     }
 
     // Totals + meta
-    if (body.is_return) { subtotal = -subtotal; tax_total = -tax_total; total = -total; }
+    const curExtraAmount = Number(curMeta.extra_amount ?? 0) || 0;
+    const curExtraTaxAmount = Number(curMeta.extra_tax_amount ?? 0) || 0;
+    const extraAmountRaw = Number(body.extra_amount ?? curExtraAmount) || 0;
+    const extraTaxAmountRaw = Number(body.extra_tax_amount ?? curExtraTaxAmount) || 0;
+    const sign = body.is_return ? -1 : 1;
+    const extraAmount = round2(Math.abs(extraAmountRaw) * sign);
+    const extraTaxAmount = round2(Math.abs(extraTaxAmountRaw) * sign);
+
+    let tax_total = round2(tax_total_items + extraTaxAmount);
+    let total = round2(total_items + extraAmount + extraTaxAmount);
+    if (body.is_return) {
+      subtotal = -subtotal;
+      tax_total = -Math.abs(tax_total);
+      total = -Math.abs(total);
+    } else {
+      subtotal = round2(subtotal);
+      tax_total = round2(tax_total);
+      total = round2(total);
+    }
     const existingPaid = salesCols.has("amount_paid")
       ? Number(curRow.amount_paid ?? 0)
       : Number(curMeta.amount_paid ?? 0);
@@ -314,12 +334,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       notes: typeof body.notes === "string" ? body.notes : (curMeta.notes ?? null),
       terms: typeof body.terms === "string" ? body.terms : (curMeta.terms ?? null),
       extra_label: typeof body.extra_label === "string" ? body.extra_label : (curMeta.extra_label ?? null),
-      extra_amount: Number.isFinite(Number(body.extra_amount))
-        ? Number(body.extra_amount)
-        : (curMeta.extra_amount ?? null),
+      extra_amount: extraAmount,
+      extra_tax_amount: extraTaxAmount,
       patient_name: typeof body.patient_name === 'string' ? body.patient_name : (curMeta.patient_name ?? null),
       doctor_name: typeof body.doctor_name === 'string' ? body.doctor_name : (curMeta.doctor_name ?? null),
       dc_no: typeof body.dc_no === 'string' ? body.dc_no : (curMeta.dc_no ?? null),
+      custom_field_totals:
+        body.custom_field_totals && typeof body.custom_field_totals === "object"
+          ? body.custom_field_totals
+          : (curMeta.custom_field_totals ?? null),
       custom_fields: nextCustomFields,
     };
 

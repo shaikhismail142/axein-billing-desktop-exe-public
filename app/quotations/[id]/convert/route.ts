@@ -70,6 +70,9 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
   const q = (await db.query(`select * from quotations where id = $1`, [quotationId])).rows[0];
   if (!q) return NextResponse.json({ error: 'Quotation not found' }, { status: 404 });
   const items = (await db.query(`select * from quotation_items where quotation_id = $1`, [quotationId])).rows;
+  const qMeta = q.meta && typeof q.meta === "object" ? q.meta : {};
+  const customExtraAmount = round2(Number(qMeta?.custom_field_totals?.extra_amount || 0) || 0);
+  const customExtraTax = round2(Number(qMeta?.custom_field_totals?.extra_tax_amount || 0) || 0);
 
   // create sale (reusing your sales schema)
   const client = await db.connect();
@@ -88,7 +91,16 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
         0,
         0,
         0,
-        JSON.stringify({ source_quotation_id: q.id, notes: q.meta?.notes || '' }),
+        JSON.stringify({
+          source_quotation_id: q.id,
+          notes: qMeta?.notes || "",
+          terms: qMeta?.terms || "",
+          custom_fields: qMeta?.custom_fields || null,
+          custom_field_totals: qMeta?.custom_field_totals || null,
+          extra_label: customExtraAmount > 0 ? "Custom Charges" : null,
+          extra_amount: customExtraAmount,
+          extra_tax_amount: customExtraTax,
+        }),
       ]
     );
     const sale = saleIns.rows[0];
@@ -136,8 +148,8 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     }
 
     const subtotalRounded = round2(subtotal);
-    const taxRounded = round2(tax_total);
-    const totalRounded = round2(total);
+    const taxRounded = round2(tax_total + customExtraTax);
+    const totalRounded = round2(total + customExtraTax + customExtraAmount);
     const amountPaid = 0;
     const pendingAmount = totalRounded;
     const paymentStatus = "Pending";

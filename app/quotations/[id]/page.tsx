@@ -145,9 +145,17 @@ export default async function Page({ params }: { params: { id: string } }) {
     };
   });
 
-  const rounded = Number(grand.toFixed(2));
-  const roundoff = Number((rounded - grand).toFixed(2));
-  const final = Number((grand + roundoff).toFixed(2));
+  const customExtraAmount = Math.max(0, toNum(quotation.meta?.custom_field_totals?.extra_amount, 0));
+  const customExtraTax = Math.max(0, toNum(quotation.meta?.custom_field_totals?.extra_tax_amount, 0));
+  const grandWithCustom = grand + customExtraAmount + customExtraTax;
+  const rounded = Number(grandWithCustom.toFixed(2));
+  const roundoff = Number((rounded - grandWithCustom).toFixed(2));
+  const final = Number((grandWithCustom + roundoff).toFixed(2));
+  const customFieldRows = Object.entries(
+    (quotation.meta?.custom_fields && typeof quotation.meta.custom_fields === "object"
+      ? quotation.meta.custom_fields
+      : {}) as Record<string, unknown>
+  ).filter(([, value]) => value != null && String(value).trim() !== "");
 
   return (
     <div className="container">
@@ -297,9 +305,28 @@ export default async function Page({ params }: { params: { id: string } }) {
           <div className="text-sm"><span className="font-medium">Subtotal:</span> {fmtINR(subtotal)}</div>
           <div className="text-sm"><span className="font-medium">Discount:</span> {fmtINR(discountTotal)}</div>
           <div className="text-sm"><span className="font-medium">Tax Total:</span> {fmtINR(taxTotal)}</div>
+          {customExtraTax > 0 ? (
+            <div className="text-sm"><span className="font-medium">Custom Tax:</span> {fmtINR(customExtraTax)}</div>
+          ) : null}
+          {customExtraAmount > 0 ? (
+            <div className="text-sm"><span className="font-medium">Custom Charges:</span> {fmtINR(customExtraAmount)}</div>
+          ) : null}
           <div className="text-sm"><span className="font-medium">Round Off:</span> {fmtINR(roundoff)}</div>
           <div className="text-base mt-1"><span className="font-semibold">Grand Total:</span> {fmtINR(final)}</div>
         </div>
+
+        {customFieldRows.length > 0 ? (
+          <div className="card p-4">
+            <div className="font-semibold mb-1">Custom Fields</div>
+            <div className="grid md:grid-cols-2 gap-2">
+              {customFieldRows.map(([key, value]) => (
+                <div key={key}>
+                  <span className="muted">{key.replace(/_/g, " ")}</span>: <span>{String(value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {/* Notes / Terms */}
         {quotation.meta?.notes && (

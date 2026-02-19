@@ -5,16 +5,23 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getRequestBusinessId } from "@/app/lib/platform-context";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import {
+  CustomFieldAppliesTo,
+  CustomFieldDataType,
+  normalizeCustomFieldAppliesTo,
+  normalizeCustomFieldConfig,
+  normalizeCustomFieldDataType,
+} from "@/app/lib/custom-fields";
 
 type CustomFieldBody = {
   id?: number;
   field_key?: string;
   label?: string;
-  data_type?: "text" | "number" | "date";
+  data_type?: CustomFieldDataType;
   required?: boolean;
   visible?: boolean;
   position?: number;
-  applies_to?: "invoice" | "purchase";
+  applies_to?: CustomFieldAppliesTo;
   config_json?: Record<string, unknown>;
 };
 
@@ -27,16 +34,6 @@ function normalizeFieldKey(input: string) {
     .slice(0, 50);
 }
 
-function normalizeDataType(input: unknown): "text" | "number" | "date" {
-  const v = String(input || "text").trim().toLowerCase();
-  if (v === "number" || v === "date") return v;
-  return "text";
-}
-
-function normalizeAppliesTo(input: unknown): "invoice" | "purchase" {
-  return String(input || "invoice").trim().toLowerCase() === "purchase" ? "purchase" : "invoice";
-}
-
 function normalizePosition(input: unknown, fallback = 100) {
   const n = Number(input);
   if (!Number.isFinite(n)) return fallback;
@@ -46,11 +43,16 @@ function normalizePosition(input: unknown, fallback = 100) {
 export async function GET(req: Request) {
   const businessId = getRequestBusinessId(req, 1);
   const url = new URL(req.url);
-  const appliesTo = normalizeAppliesTo(url.searchParams.get("applies_to") || "invoice");
+  const appliesRaw = String(url.searchParams.get("applies_to") || "").trim().toLowerCase();
+  const appliesTo = appliesRaw && appliesRaw !== "all" ? normalizeCustomFieldAppliesTo(appliesRaw) : null;
   const visibleOnly = url.searchParams.get("visible") === "1";
 
-  const params: any[] = [businessId, appliesTo];
-  let where = "business_id = $1 AND applies_to = $2";
+  const params: any[] = [businessId];
+  let where = "business_id = $1";
+  if (appliesTo) {
+    params.push(appliesTo);
+    where += ` AND applies_to = $${params.length}`;
+  }
   if (visibleOnly) {
     params.push(true);
     where += ` AND visible = $${params.length}`;
@@ -58,9 +60,9 @@ export async function GET(req: Request) {
 
   const rs = await pool.query(
     `SELECT id, field_key, label, data_type, required, visible, position, applies_to, preset_scope, config_json, updated_at
-       FROM invoice_custom_fields
+      FROM invoice_custom_fields
       WHERE ${where}
-      ORDER BY position ASC, id ASC`,
+      ORDER BY applies_to ASC, position ASC, id ASC`,
     params
   );
 
@@ -79,11 +81,12 @@ export async function POST(req: Request) {
   const businessId = access.ctx.businessId || getRequestBusinessId(req, 1);
   const fieldKey = normalizeFieldKey(String(body.field_key || ""));
   const label = String(body.label || "").trim().slice(0, 120);
-  const dataType = normalizeDataType(body.data_type);
+  const dataType = normalizeCustomFieldDataType(body.data_type);
   const required = body.required === true;
   const visible = body.visible !== false;
   const position = normalizePosition(body.position, 100);
-  const appliesTo = normalizeAppliesTo(body.applies_to);
+  const appliesTo = normalizeCustomFieldAppliesTo(body.applies_to);
+  const configJson = normalizeCustomFieldConfig(dataType, body.config_json || {});
 
   if (!fieldKey || !label) {
     return NextResponse.json({ error: "field_key and label are required" }, { status: 400 });
@@ -114,7 +117,7 @@ export async function POST(req: Request) {
       visible,
       position,
       appliesTo,
-      JSON.stringify(body.config_json || {}),
+      JSON.stringify(configJson),
     ]
   );
 
@@ -142,11 +145,12 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "label is required" }, { status: 400 });
   }
 
-  const dataType = normalizeDataType(body.data_type);
+  const dataType = normalizeCustomFieldDataType(body.data_type);
   const required = body.required === true;
   const visible = body.visible !== false;
   const position = normalizePosition(body.position, 100);
-  const appliesTo = normalizeAppliesTo(body.applies_to);
+  const appliesTo = normalizeCustomFieldAppliesTo(body.applies_to);
+  const configJson = normalizeCustomFieldConfig(dataType, body.config_json || {});
 
   const rs = await pool.query(
     `UPDATE invoice_custom_fields
@@ -170,7 +174,7 @@ export async function PUT(req: Request) {
       visible,
       position,
       appliesTo,
-      JSON.stringify(body.config_json || {}),
+      JSON.stringify(configJson),
     ]
   );
 

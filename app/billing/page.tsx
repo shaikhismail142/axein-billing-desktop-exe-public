@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from "next/link";
+import {
+  computeCustomFieldTotals,
+  getCustomFieldOptions,
+  CustomFieldDataType,
+} from "@/app/lib/custom-fields";
 
 type Product = {
   id: number;
@@ -42,10 +47,11 @@ type CustomInvoiceField = {
   id: number;
   field_key: string;
   label: string;
-  data_type: "text" | "number" | "date";
+  data_type: CustomFieldDataType;
   required: boolean;
   visible: boolean;
   position: number;
+  config_json?: Record<string, unknown> | null;
 };
 
 const RESERVED_INVOICE_FIELD_KEYS = new Set(["payment_mode", "customer_phone"]);
@@ -119,10 +125,11 @@ export default function Billing() {
               id: Number(row.id),
               field_key: String(row.field_key || ""),
               label: String(row.label || ""),
-              data_type: String(row.data_type || "text") as "text" | "number" | "date",
+              data_type: String(row.data_type || "text") as CustomFieldDataType,
               required: Boolean(row.required),
               visible: row.visible !== false,
               position: Number(row.position || 100),
+              config_json: row.config_json && typeof row.config_json === "object" ? row.config_json : {},
             }))
             .filter(
               (row: CustomInvoiceField) =>
@@ -217,8 +224,17 @@ export default function Billing() {
     [items]
   );
 
+  const customComputed = useMemo(
+    () => computeCustomFieldTotals(customFields, customFieldValues, totals.taxable),
+    [customFields, customFieldValues, totals.taxable]
+  );
+
   const extra = Math.max(0, Number(extraAmount || 0));
-  const grandTotal = +(totals.total + extra).toFixed(2);
+  const customExtraAmount = Number(customComputed.extraAmount || 0);
+  const customExtraTaxAmount = Number(customComputed.extraTaxAmount || 0);
+  const totalExtraAmount = +(extra + customExtraAmount).toFixed(2);
+  const totalTaxAmount = +(totals.tax + customExtraTaxAmount).toFixed(2);
+  const grandTotal = +(totals.taxable + totalTaxAmount + totalExtraAmount).toFixed(2);
   const pendingAmount = Math.max(grandTotal - (Number(amountPaid) || 0), 0);
 
   useEffect(() => {
@@ -235,11 +251,15 @@ export default function Billing() {
     );
     const customFieldsPayload: Record<string, string> = {};
     for (const field of orderedCustomFields) {
-      const value = String(customFieldValues[field.field_key] || "").trim();
+      const raw = customFieldValues[field.field_key];
+      const value = raw == null ? "" : String(raw).trim();
       if (field.required && !value) {
         return alert(`Please fill required field: ${field.label}`);
       }
       if (value) customFieldsPayload[field.field_key] = value;
+    }
+    for (const [k, v] of Object.entries(customComputed.values || {})) {
+      if (v != null && String(v).trim()) customFieldsPayload[k] = String(v).trim();
     }
 
     try {
@@ -256,7 +276,13 @@ export default function Billing() {
         notes: (notes || "").trim() || null,
         terms: (terms || "").trim() || null,
         extra_label: (extraLabel || "").trim() || null,
-        extra_amount: extra,
+        extra_amount: totalExtraAmount,
+        extra_tax_amount: customExtraTaxAmount,
+        custom_field_totals: {
+          extra_amount: customExtraAmount,
+          extra_tax_amount: customExtraTaxAmount,
+          taxable_base: customComputed.taxableBase,
+        },
         amount_paid: Number(amountPaid || 0),
         payment_method: paymentMethod || null,
         items: items.map((it) => ({
@@ -369,24 +395,75 @@ export default function Billing() {
             <div className="grid md:grid-cols-2 gap-3">
               {[...customFields]
                 .sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id)
-                .map((field) => (
-                  <div key={field.field_key}>
-                    <label style={{ fontSize: 12, color: "var(--muted)" }}>
-                      {field.label}{field.required ? " *" : ""}
-                    </label>
-                    <input
-                      className="input"
-                      type={field.data_type === "number" ? "number" : field.data_type === "date" ? "date" : "text"}
-                      value={customFieldValues[field.field_key] || ""}
-                      onChange={(e) =>
-                        setCustomFieldValues((prev) => ({
-                          ...prev,
-                          [field.field_key]: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                ))}
+                .map((field) => {
+                  const options = getCustomFieldOptions(field);
+                  const value = customFieldValues[field.field_key] || "";
+                  const numericType =
+                    field.data_type === "number" ||
+                    field.data_type === "price" ||
+                    field.data_type === "tax_percent";
+                  return (
+                    <div key={field.field_key}>
+                      <label style={{ fontSize: 12, color: "var(--muted)" }}>
+                        {field.label}
+                        {field.required ? " *" : ""}
+                      </label>
+
+                      {field.data_type === "dropdown" ? (
+                        <select
+                          className="input"
+                          value={value}
+                          onChange={(e) =>
+                            setCustomFieldValues((prev) => ({
+                              ...prev,
+                              [field.field_key]: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Select</option>
+                          {options.map((opt) => (
+                            <option key={`${field.field_key}-${opt.value}`} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : field.data_type === "radio" ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 6 }}>
+                          {options.map((opt) => (
+                            <label key={`${field.field_key}-${opt.value}`} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <input
+                                type="radio"
+                                name={field.field_key}
+                                value={opt.value}
+                                checked={value === opt.value}
+                                onChange={(e) =>
+                                  setCustomFieldValues((prev) => ({
+                                    ...prev,
+                                    [field.field_key]: e.target.value,
+                                  }))
+                                }
+                              />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <input
+                          className="input"
+                          type={numericType ? "number" : field.data_type === "date" ? "date" : "text"}
+                          step={field.data_type === "tax_percent" ? "0.01" : undefined}
+                          value={value}
+                          onChange={(e) =>
+                            setCustomFieldValues((prev) => ({
+                              ...prev,
+                              [field.field_key]: e.target.value,
+                            }))
+                          }
+                        />
+                      )}
+                    </div>
+                  );
+                })}
             </div>
             <div className="mt-2 text-xs opacity-70">
               These fields are configured from Settings &gt; Invoice Custom Fields and shown in invoice outputs.
@@ -575,9 +652,17 @@ export default function Billing() {
           <div className="card no-break" style={{ padding: 12, minWidth: 320 }}>
             <div className="flex justify-between"><span>Taxable</span><b>{inr(totals.taxable)}</b></div>
             <div className="flex justify-between"><span>Tax</span><b>{inr(totals.tax)}</b></div>
+            {customExtraTaxAmount !== 0 ? (
+              <div className="flex justify-between"><span>Custom Tax</span><b>{inr(customExtraTaxAmount)}</b></div>
+            ) : null}
             <div className="flex justify-between">
               <span>{extraLabel || 'Additional Charge'}</span><b>{inr(extra)}</b>
             </div>
+            {customExtraAmount !== 0 ? (
+              <div className="flex justify-between">
+                <span>Custom Charges</span><b>{inr(customExtraAmount)}</b>
+              </div>
+            ) : null}
             <div className="flex justify-between" style={{ borderTop: '1px solid var(--glass-brd)', marginTop: 6, paddingTop: 6 }}>
               <span>Total</span><b style={{ fontSize: 18 }}>{inr(grandTotal)}</b>
             </div>

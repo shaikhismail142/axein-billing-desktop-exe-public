@@ -137,7 +137,10 @@ export async function GET(req: NextRequest) {
               )
           ),
           0
-        )::float8                                    as total_amount
+        )
+        + COALESCE((b.meta->'custom_field_totals'->>'extra_amount')::numeric, 0)
+        + COALESCE((b.meta->'custom_field_totals'->>'extra_tax_amount')::numeric, 0)
+        ::float8                                    as total_amount
       from base b
       left join quotation_items qi on qi.quotation_id = b.id
       group by b.id, b.quotation_number, b.quotation_date, b.valid_until, b.meta, b.customer_name
@@ -253,6 +256,8 @@ export async function POST(req: NextRequest) {
     notes = '',
     terms = '',
     valid_until = null, // ISO date or null
+    custom_fields = null,
+    custom_field_totals = null,
   }: {
     customer_id?: number | null;
     customer_name?: string | null;
@@ -260,6 +265,8 @@ export async function POST(req: NextRequest) {
     notes?: string;
     terms?: string;
     valid_until?: string | null;
+    custom_fields?: Record<string, unknown> | null;
+    custom_field_totals?: Record<string, unknown> | null;
   } = payload ?? {};
 
   if (!isValidItems(items as Item[])) {
@@ -311,7 +318,20 @@ export async function POST(req: NextRequest) {
 
     // Generate quotation number (with basic collision handling)
     const quotation_number = await generateQuotationNumber(client, businessId, hasQuotationBusiness);
-    const meta = { notes: notes ?? '', terms: terms ?? '' };
+    const safeCustomFields =
+      custom_fields && typeof custom_fields === "object" && !Array.isArray(custom_fields)
+        ? custom_fields
+        : null;
+    const safeCustomFieldTotals =
+      custom_field_totals && typeof custom_field_totals === "object" && !Array.isArray(custom_field_totals)
+        ? custom_field_totals
+        : null;
+    const meta = {
+      notes: notes ?? "",
+      terms: terms ?? "",
+      custom_fields: safeCustomFields,
+      custom_field_totals: safeCustomFieldTotals,
+    };
 
     const qRes = hasQuotationBusiness
       ? await client.query(

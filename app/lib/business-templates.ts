@@ -17,7 +17,7 @@ export type TemplateField = {
   label: string;
   required: boolean;
   visible: boolean;
-  data_type?: "text" | "number" | "date";
+  data_type?: "text" | "number" | "date" | "dropdown" | "radio" | "price" | "tax_percent";
 };
 
 export type TemplateNavKey =
@@ -263,7 +263,7 @@ export const BUSINESS_TEMPLATES: Record<BusinessType, BusinessTemplate> = {
       { key: "guests_count", label: "Guests", required: false, visible: true, data_type: "number" },
       { key: "server_name", label: "Server Name", required: false, visible: true, data_type: "text" },
       { key: "order_type", label: "Order Type (Dine-in/Takeaway)", required: false, visible: true, data_type: "text" },
-      { key: "service_tax_pct", label: "Service Tax %", required: false, visible: true, data_type: "number" },
+      { key: "service_tax_pct", label: "Service Tax %", required: false, visible: true, data_type: "tax_percent" },
     ],
   },
   school_institute: {

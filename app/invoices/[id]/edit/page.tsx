@@ -22,6 +22,11 @@ type Sale = {
   payment_status?: string | null;
   payment_method?: string | null;
   notes: string | null;
+  terms?: string | null;
+  extra_label?: string | null;
+  extra_amount?: number;
+  extra_tax_amount?: number;
+  custom_field_totals?: Record<string, unknown> | null;
   customer_name?: string | null;
   patient_name?: string | null;
   doctor_name?: string | null;
@@ -55,6 +60,11 @@ export default async function EditInvoicePage({ params }: { params: { id: string
             COALESCE(NULLIF(s.payment_status,''), (s.meta->>'payment_status')) AS payment_status,
             COALESCE(NULLIF(s.payment_method,''), (s.meta->>'payment_method')) AS payment_method,
             (s.meta->>'notes')                               AS notes,
+            (s.meta->>'terms')                               AS terms,
+            (s.meta->>'extra_label')                         AS extra_label,
+            COALESCE((s.meta->>'extra_amount')::numeric, 0)  AS extra_amount,
+            COALESCE((s.meta->>'extra_tax_amount')::numeric, 0) AS extra_tax_amount,
+            (s.meta->'custom_field_totals')                  AS custom_field_totals,
             (s.meta->>'patient_name')                        AS patient_name,
             (s.meta->>'doctor_name')                         AS doctor_name,
             (s.meta->>'dc_no')                               AS dc_no,

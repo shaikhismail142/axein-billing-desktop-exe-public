@@ -8,6 +8,22 @@ import { revalidatePath } from "next/cache";
 import ItemsEditor from "../_components/ItemsEditor";
 import { pool } from "@/lib/db";
 import { getServerRequestContext } from "@/app/lib/server-request";
+import {
+  computeCustomFieldTotals,
+  CustomFieldDataType,
+  getCustomFieldOptions,
+} from "@/app/lib/custom-fields";
+
+type PurchaseCustomField = {
+  id: number;
+  field_key: string;
+  label: string;
+  data_type: CustomFieldDataType;
+  required: boolean;
+  visible: boolean;
+  position: number;
+  config_json?: Record<string, unknown> | null;
+};
 
 /* ---------------------------------- utils --------------------------------- */
 
@@ -135,6 +151,46 @@ async function createPurchase(formData: FormData) {
     redirect(`/inventory/purchases/new?error=${encodeURIComponent("Add at least one valid item (Product ID & Qty > 0).")}`);
   }
 
+  let customFieldsPayload: Record<string, string> = {};
+  let customFieldTotals: Record<string, number> | null = null;
+  try {
+    const cfRes = await fetch(`${ctx.baseUrl}/api/settings/invoice-custom-fields?applies_to=purchase&visible=1`, {
+      cache: "no-store",
+      headers: ctx.authHeaders,
+    });
+    if (cfRes.ok) {
+      const cfData = await cfRes.json().catch(() => ({}));
+      const defs = (Array.isArray(cfData?.items) ? cfData.items : []) as PurchaseCustomField[];
+      const values: Record<string, string> = {};
+      const sortedDefs = [...defs].sort(
+        (a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id
+      );
+      for (const field of sortedDefs) {
+        const raw = formData.get(`cf_${field.field_key}`);
+        const value = raw == null ? "" : String(raw).trim();
+        if (field.required && !value) {
+          redirect(`/inventory/purchases/new?error=${encodeURIComponent(`Please fill required field: ${field.label}`)}`);
+        }
+        if (value) values[field.field_key] = value;
+      }
+
+      const baseTaxable = Math.max(
+        0,
+        normalized.reduce((a, it) => a + Number(it.qty || 0) * Number(it.cost_price || 0), 0) -
+          normalized.reduce((a, it) => a + Number(it.discount || 0), 0)
+      );
+      const computed = computeCustomFieldTotals(sortedDefs, values, baseTaxable);
+      customFieldsPayload = { ...values, ...computed.values };
+      customFieldTotals = {
+        extra_amount: Number(computed.extraAmount || 0),
+        extra_tax_amount: Number(computed.extraTaxAmount || 0),
+        taxable_base: Number(computed.taxableBase || 0),
+      };
+    }
+  } catch {
+    // keep purchase creation resilient even if custom field lookup fails
+  }
+
   const payload = {
     vendor_name,
     invoice_no,
@@ -144,6 +200,10 @@ async function createPurchase(formData: FormData) {
     amount_paid,
     payment_method: payment_method || null,
     add_to_inventory: !!addFlag,
+    custom_fields: customFieldsPayload,
+    custom_field_totals: customFieldTotals,
+    extra_amount: Number(customFieldTotals?.extra_amount || 0),
+    extra_tax_amount: Number(customFieldTotals?.extra_tax_amount || 0),
     items: normalized,
   };
 
@@ -190,6 +250,23 @@ async function createPurchase(formData: FormData) {
 
 export default async function NewPurchasePage({ searchParams }: { searchParams?: Record<string, string> }) {
   const error = searchParams?.error ? decodeURIComponent(searchParams.error) : "";
+  const ctx = getServerRequestContext();
+  let customFields: PurchaseCustomField[] = [];
+  try {
+    const res = await fetch(`${ctx.baseUrl}/api/settings/invoice-custom-fields?applies_to=purchase&visible=1`, {
+      cache: "no-store",
+      headers: ctx.authHeaders,
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      customFields = (Array.isArray(data?.items) ? data.items : []) as PurchaseCustomField[];
+    }
+  } catch {
+    customFields = [];
+  }
+  customFields = [...customFields].sort(
+    (a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id
+  );
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -264,6 +341,64 @@ export default async function NewPurchasePage({ searchParams }: { searchParams?:
               <textarea name="notes" rows={3} className="w-full rounded-xl border border-black/10 bg-white/70 px-3 py-2 outline-none focus:ring-2 focus:ring-black/10" placeholder="Optional notes about this purchase..." />
             </label>
           </div>
+
+          {customFields.length > 0 ? (
+            <div className="rounded-2xl border border-black/5 bg-[color:var(--surface-1)] p-4">
+              <div className="font-medium mb-3">Custom Purchase Fields</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {customFields.map((field) => {
+                  const options = getCustomFieldOptions(field);
+                  const name = `cf_${field.field_key}`;
+                  const numericType =
+                    field.data_type === "number" ||
+                    field.data_type === "price" ||
+                    field.data_type === "tax_percent";
+                  return (
+                    <label key={field.field_key} className="text-sm block">
+                      <span className="block mb-1 text-[color:var(--muted)]">
+                        {field.label}
+                        {field.required ? " *" : ""}
+                      </span>
+                      {field.data_type === "dropdown" ? (
+                        <select
+                          name={name}
+                          required={field.required}
+                          className="w-full rounded-xl border border-black/10 bg-white/70 px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                        >
+                          <option value="">Select</option>
+                          {options.map((opt) => (
+                            <option key={`${field.field_key}-${opt.value}`} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : field.data_type === "radio" ? (
+                        <div className="flex flex-wrap gap-3 rounded-xl border border-black/10 bg-white/70 px-3 py-2">
+                          {options.map((opt) => (
+                            <label key={`${field.field_key}-${opt.value}`} className="inline-flex items-center gap-2">
+                              <input type="radio" name={name} value={opt.value} required={field.required} />
+                              <span>{opt.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <input
+                          name={name}
+                          required={field.required}
+                          type={numericType ? "number" : field.data_type === "date" ? "date" : "text"}
+                          step={field.data_type === "tax_percent" ? "0.01" : undefined}
+                          className="w-full rounded-xl border border-black/10 bg-white/70 px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-[color:var(--muted)] mt-2">
+                Fields with type <b>Price</b> and <b>Tax %</b> are auto-calculated and added to purchase totals.
+              </p>
+            </div>
+          ) : null}
 
           <ItemsEditor name="items_json" />
 

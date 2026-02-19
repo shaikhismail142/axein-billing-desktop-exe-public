@@ -34,6 +34,10 @@ export type PurchaseCreateIn = {
   amount_paid?: number | string | null;
   payment_method?: string | null;
   add_to_inventory?: boolean;
+  custom_fields?: Record<string, unknown> | null;
+  custom_field_totals?: Record<string, unknown> | null;
+  extra_amount?: number | string | null;
+  extra_tax_amount?: number | string | null;
   items: ItemIn[];
 };
 
@@ -235,9 +239,16 @@ export async function POST(req: NextRequest) {
 
     // Totals (safe math)
     const subtotal = body.items.reduce((acc, it) => acc + normQty(it.qty) * normMoney(it.cost_price), 0);
-    const total_tax = body.items.reduce((acc, it) => acc + (normTax(it.tax_rate) / 100) * (normQty(it.qty) * normMoney(it.cost_price)), 0);
+    const total_tax_items = body.items.reduce((acc, it) => acc + (normTax(it.tax_rate) / 100) * (normQty(it.qty) * normMoney(it.cost_price)), 0);
     const discount_total = body.items.reduce((a, it) => a + normMoney(it.discount), 0);
-    const total_amount = subtotal + total_tax - discount_total;
+    const customFieldTotals =
+      body.custom_field_totals && typeof body.custom_field_totals === "object" && !Array.isArray(body.custom_field_totals)
+        ? body.custom_field_totals
+        : null;
+    const extra_amount = normMoney(body.extra_amount ?? (customFieldTotals as any)?.extra_amount ?? 0);
+    const extra_tax_amount = normMoney(body.extra_tax_amount ?? (customFieldTotals as any)?.extra_tax_amount ?? 0);
+    const total_tax = total_tax_items + extra_tax_amount;
+    const total_amount = subtotal + total_tax - discount_total + extra_amount;
 
     const amount_paid = normMoney(body.amount_paid ?? (body.paid ? total_amount : 0));
     const pending_amount = Math.max(0, normMoney(total_amount - amount_paid));
@@ -254,6 +265,13 @@ export async function POST(req: NextRequest) {
       pending_amount,
       payment_status,
       payment_method,
+      extra_amount,
+      extra_tax_amount,
+      custom_fields:
+        body.custom_fields && typeof body.custom_fields === "object" && !Array.isArray(body.custom_fields)
+          ? body.custom_fields
+          : null,
+      custom_field_totals: customFieldTotals,
     };
     if (!purchasesCols.has("invoice_no") && !purchasesCols.has("bill_no")) meta.invoice_no = invoice_no;
     if (!purchasesCols.has("invoice_date") && !purchasesCols.has("bill_date") && invoice_date) meta.invoice_date = invoice_date;

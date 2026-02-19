@@ -256,9 +256,12 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     };
   });
 
-  const rounded = round2(grand);
-  const roundoff = round2(rounded - grand);
-  const final = round2(grand + roundoff);
+  const customExtraAmount = Math.max(0, toNum((q as any)?.meta?.custom_field_totals?.extra_amount, 0));
+  const customExtraTax = Math.max(0, toNum((q as any)?.meta?.custom_field_totals?.extra_tax_amount, 0));
+  const grandWithCustom = grand + customExtraAmount + customExtraTax;
+  const rounded = round2(grandWithCustom);
+  const roundoff = round2(rounded - grandWithCustom);
+  const final = round2(grandWithCustom + roundoff);
 
   // ---------- PDF (Tally-like layout) ----------
   const doc = new PDFDocument({ size: "A4", margin: 36 }); // no bufferPages
@@ -441,6 +444,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   row("Subtotal:", fmtINR(subtotal));
   row("Discount:", `-${fmtINR(discountTotal)}`);
   row("Tax Total:", fmtINR(taxTotal));
+  if (customExtraTax > 0) row("Custom Tax:", fmtINR(customExtraTax));
+  if (customExtraAmount > 0) row("Custom Charges:", fmtINR(customExtraAmount));
   row("Round Off:", fmtINR(roundoff));
   doc.moveTo(cardX + cardPad, cy - 4).lineTo(cardX + cardW - cardPad, cy - 4).strokeColor("#9ca3af").lineWidth(0.8).stroke();
   row("Grand Total:", fmtINR(final), true);
