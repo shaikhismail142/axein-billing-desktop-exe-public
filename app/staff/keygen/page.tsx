@@ -77,6 +77,9 @@ const BUSINESS_TYPES = [
   ["school_institute", "School/Institute"],
 ] as const;
 
+const KEYGEN_UNLOCK_STORAGE_KEY = "axein_keygen_unlock_token";
+const KEYGEN_UNLOCK_HEADER_NAME = "x-keygen-unlock-token";
+
 function toIsoDateOnly(iso: string) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -118,6 +121,7 @@ export default function StaffKeygenPage() {
   const [unlocked, setUnlocked] = useState(false);
   const [available, setAvailable] = useState(true);
   const [superPassword, setSuperPassword] = useState("");
+  const [unlockToken, setUnlockToken] = useState("");
 
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
@@ -158,7 +162,19 @@ export default function StaffKeygenPage() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch("/api/staff/keygen/unlock", { cache: "no-store" });
+        let persistedToken = "";
+        try {
+          persistedToken = window.localStorage.getItem(KEYGEN_UNLOCK_STORAGE_KEY) || "";
+        } catch {
+          // no-op
+        }
+
+        const headers: Record<string, string> = {};
+        if (persistedToken) {
+          headers[KEYGEN_UNLOCK_HEADER_NAME] = persistedToken;
+        }
+
+        const res = await fetch("/api/staff/keygen/unlock", { cache: "no-store", headers });
         const data = (await res.json().catch(() => ({}))) as {
           available?: boolean;
           unlocked?: boolean;
@@ -167,6 +183,9 @@ export default function StaffKeygenPage() {
         if (!active) return;
         setAvailable(data.available !== false);
         setUnlocked(!!data.unlocked);
+        if (data.unlocked && persistedToken) {
+          setUnlockToken(persistedToken);
+        }
         if (data.available === false && data.message) {
           setError(data.message);
         }
@@ -202,7 +221,10 @@ export default function StaffKeygenPage() {
         });
         const res = await fetch(`/api/staff/keygen/history?${qs.toString()}`, {
           cache: "no-store",
-          headers: { "x-admin": "1" },
+          headers: {
+            "x-admin": "1",
+            ...(unlockToken ? { [KEYGEN_UNLOCK_HEADER_NAME]: unlockToken } : {}),
+          },
         });
         const data = (await res.json().catch(() => ({}))) as HistoryResponse;
         if (!active) return;
@@ -223,7 +245,7 @@ export default function StaffKeygenPage() {
     return () => {
       active = false;
     };
-  }, [unlocked, historyPage, historyPageSize, historySort, historyDir, historyReloadKey]);
+  }, [unlocked, historyPage, historyPageSize, historySort, historyDir, historyReloadKey, unlockToken]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -239,7 +261,11 @@ export default function StaffKeygenPage() {
       };
       const res = await fetch("/api/staff/keygen/issue", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin": "1" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin": "1",
+          ...(unlockToken ? { [KEYGEN_UNLOCK_HEADER_NAME]: unlockToken } : {}),
+        },
         body: JSON.stringify(body),
       });
       const data = (await res.json().catch(() => ({}))) as KeygenResponse;
@@ -257,7 +283,17 @@ export default function StaffKeygenPage() {
         }
       }
     } catch (e: any) {
-      setError(String(e?.message || "Key generation failed"));
+      const message = String(e?.message || "Key generation failed");
+      setError(message);
+      if (message.toLowerCase().includes("unlock")) {
+        setUnlocked(false);
+        setUnlockToken("");
+        try {
+          window.localStorage.removeItem(KEYGEN_UNLOCK_STORAGE_KEY);
+        } catch {
+          // no-op
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -277,11 +313,24 @@ export default function StaffKeygenPage() {
         headers: { "Content-Type": "application/json", "x-admin": "1" },
         body: JSON.stringify({ super_password: superPassword }),
       });
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        unlock_token?: string;
+      };
       if (!res.ok || !data.ok) {
         throw new Error(String(data.error || "Super password validation failed"));
       }
       setUnlocked(true);
+      const token = String(data.unlock_token || "").trim();
+      if (token) {
+        setUnlockToken(token);
+        try {
+          window.localStorage.setItem(KEYGEN_UNLOCK_STORAGE_KEY, token);
+        } catch {
+          // no-op
+        }
+      }
       setSuperPassword("");
     } catch (e: any) {
       setError(String(e?.message || "Super password validation failed"));
@@ -295,10 +344,19 @@ export default function StaffKeygenPage() {
     setBusy(true);
     setError(null);
     try {
-      await fetch("/api/staff/keygen/unlock", { method: "DELETE" });
+      await fetch("/api/staff/keygen/unlock", {
+        method: "DELETE",
+        headers: unlockToken ? { [KEYGEN_UNLOCK_HEADER_NAME]: unlockToken } : undefined,
+      });
       setUnlocked(false);
+      setUnlockToken("");
       setOk(null);
       setResult(null);
+      try {
+        window.localStorage.removeItem(KEYGEN_UNLOCK_STORAGE_KEY);
+      } catch {
+        // no-op
+      }
     } finally {
       setBusy(false);
     }

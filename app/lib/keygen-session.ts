@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { getCookieValue } from "@/app/lib/session";
 
 export const KEYGEN_UNLOCK_COOKIE_NAME = "axein_keygen_unlock";
+export const KEYGEN_UNLOCK_HEADER_NAME = "x-keygen-unlock-token";
 const KEYGEN_UNLOCK_TTL_SECONDS = 60 * 30;
 const DEFAULT_KEYGEN_SESSION_SECRET = "AxEinKeygenSessionSecret@2026#ChangeMe";
 
@@ -78,8 +79,10 @@ export function verifyKeygenUnlockToken(token: string) {
 }
 
 export function isKeygenUnlocked(req: Request) {
-  const token = getCookieValue(req.headers.get("cookie"), KEYGEN_UNLOCK_COOKIE_NAME);
-  return verifyKeygenUnlockToken(token);
+  const headerToken = String(req.headers.get(KEYGEN_UNLOCK_HEADER_NAME) || "").trim();
+  if (verifyKeygenUnlockToken(headerToken)) return true;
+  const cookieToken = getCookieValue(req.headers.get("cookie"), KEYGEN_UNLOCK_COOKIE_NAME);
+  return verifyKeygenUnlockToken(cookieToken);
 }
 
 export function makeKeygenUnlockCookie(token: string) {

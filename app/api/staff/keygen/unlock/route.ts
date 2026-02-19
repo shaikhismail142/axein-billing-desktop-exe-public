@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import {
   createKeygenUnlockToken,
   isKeygenUnlocked,
+  KEYGEN_UNLOCK_HEADER_NAME,
   makeClearedKeygenUnlockCookie,
   makeKeygenUnlockCookie,
 } from "@/app/lib/keygen-session";
@@ -89,7 +90,8 @@ export async function POST(req: Request) {
   }
 
   const token = createKeygenUnlockToken();
-  const response = NextResponse.json({ ok: true, unlocked: true });
+  const response = NextResponse.json({ ok: true, unlocked: true, unlock_token: token });
+  response.headers.set(KEYGEN_UNLOCK_HEADER_NAME, token);
   response.headers.append("Set-Cookie", makeKeygenUnlockCookie(token));
   return response;
 }

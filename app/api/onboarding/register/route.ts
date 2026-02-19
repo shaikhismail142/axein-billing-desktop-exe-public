@@ -45,6 +45,40 @@ function isMissingComputerLimitColumn(err: unknown) {
   return message.includes("computer_limit") && message.includes("does not exist");
 }
 
+const BOOTSTRAP_SAMPLE_PRODUCT_SKUS = [
+  "PVC-ELB-12",
+  "ANG-VAL-CHR",
+  "MIR-24x18",
+  "PTFE-001",
+];
+
+async function clearBootstrapSampleProducts(client: any, businessId: number) {
+  if (!Number.isFinite(businessId) || businessId <= 0) return;
+  const columnRs = await client.query(
+    `SELECT 1
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'products'
+        AND column_name = 'business_id'
+      LIMIT 1`
+  );
+  const hasBusinessColumn = columnRs.rowCount > 0;
+  if (hasBusinessColumn) {
+    await client.query(
+      `DELETE FROM products
+        WHERE business_id = $1
+          AND sku = ANY($2::text[])`,
+      [businessId, BOOTSTRAP_SAMPLE_PRODUCT_SKUS]
+    );
+    return;
+  }
+  await client.query(
+    `DELETE FROM products
+      WHERE sku = ANY($1::text[])`,
+    [BOOTSTRAP_SAMPLE_PRODUCT_SKUS]
+  );
+}
+
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as RegisterBody;
 
@@ -219,6 +253,16 @@ export async function POST(req: Request) {
       }
     }
     const business = businessRs.rows[0];
+
+    // Fresh desktop installs may contain seed SKUs from legacy migrations.
+    // Remove only known sample SKUs when finalizing the bootstrap business.
+    if (bootstrapBusinessId > 0) {
+      try {
+        await clearBootstrapSampleProducts(client, Number(business.id || bootstrapBusinessId));
+      } catch (e) {
+        console.warn("Bootstrap sample product cleanup skipped:", e);
+      }
+    }
 
     await client.query(
       `INSERT INTO module_policies (business_id, module_key, policy_json)
