@@ -179,7 +179,9 @@ fn resolve_node_binary(search_roots: &[PathBuf]) -> PathBuf {
     {
         for root in search_roots {
             let bundled_candidates = [
+                root.join("runtime").join("node").join("bin").join("node.exe"),
                 root.join("runtime").join("node").join("node.exe"),
+                root.join("node").join("bin").join("node.exe"),
                 root.join("node").join("node.exe"),
                 root.join("node.exe"),
             ];
@@ -196,7 +198,9 @@ fn resolve_node_binary(search_roots: &[PathBuf]) -> PathBuf {
     {
         for root in search_roots {
             let bundled_candidates = [
+                root.join("runtime").join("node").join("bin").join("node"),
                 root.join("runtime").join("node").join("node"),
+                root.join("node").join("bin").join("node"),
                 root.join("node").join("node"),
                 root.join("node"),
             ];

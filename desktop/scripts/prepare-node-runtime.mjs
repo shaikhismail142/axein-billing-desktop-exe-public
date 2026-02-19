@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -11,12 +12,8 @@ const root = path.resolve(__dirname, "..", "..");
 
 const runtimeNodeDir = path.join(root, "desktop", "runtime", "node");
 
-function run(cmd, args, opts = {}) {
-  const out = spawnSync(cmd, args, {
-    cwd: opts.cwd || root,
-    stdio: "pipe",
-    encoding: "utf8",
-  });
+function run(cmd, args, cwd = root) {
+  const out = spawnSync(cmd, args, { cwd, stdio: "pipe", encoding: "utf8" });
   if (out.status !== 0) {
     throw new Error(
       `${cmd} ${args.join(" ")} failed (${out.status}): ${out.stderr?.trim() || out.stdout?.trim() || "unknown error"}`,
@@ -25,140 +22,62 @@ function run(cmd, args, opts = {}) {
   return (out.stdout || "").trim();
 }
 
-function listMachODependencies(filePath) {
-  const raw = run("otool", ["-L", filePath]);
-  const lines = raw.split(/\r?\n/).slice(1);
-  return lines
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.split(" (")[0]?.trim())
-    .filter(Boolean);
+function archTag() {
+  if (process.arch === "arm64") return "arm64";
+  if (process.arch === "x64") return "x64";
+  throw new Error(`Unsupported architecture for desktop node bundle: ${process.arch}`);
 }
 
-function isSystemLibrary(dep) {
-  return (
-    dep.startsWith("/usr/lib/") ||
-    dep.startsWith("/System/Library/") ||
-    dep.startsWith("/Library/Apple/System/Library/")
-  );
+async function cleanRuntimeNodeDir() {
+  await fs.rm(runtimeNodeDir, { recursive: true, force: true });
+  await fs.mkdir(runtimeNodeDir, { recursive: true });
 }
 
-function resolveDependencySource(dep, sourceFile, sourceNode) {
-  if (dep.startsWith("/")) {
-    return dep;
-  }
+async function copyPortableNodeForDarwin() {
+  const version = process.env.AXEIN_NODE_VERSION || process.versions.node;
+  const vTag = `v${version}`;
+  const darwinArch = archTag();
+  const distName = `node-${vTag}-darwin-${darwinArch}`;
+  const archiveName = `${distName}.tar.gz`;
+  const downloadUrl = `https://nodejs.org/dist/${vTag}/${archiveName}`;
 
-  const sourceDir = path.dirname(sourceFile);
-  const nodeBinDir = path.dirname(sourceNode);
-  const nodeLibDir = path.resolve(nodeBinDir, "..", "lib");
-
-  if (dep.startsWith("@loader_path/")) {
-    const rel = dep.slice("@loader_path/".length);
-    return path.resolve(sourceDir, rel);
-  }
-
-  if (dep.startsWith("@executable_path/")) {
-    const rel = dep.slice("@executable_path/".length);
-    return path.resolve(nodeBinDir, rel);
-  }
-
-  if (dep.startsWith("@rpath/")) {
-    const rel = dep.slice("@rpath/".length);
-    const candidates = [
-      path.resolve(sourceDir, rel),
-      path.resolve(sourceDir, "..", "lib", rel),
-      path.resolve(nodeBinDir, rel),
-      path.resolve(nodeLibDir, rel),
-      path.resolve(nodeBinDir, "..", rel),
-    ];
-    for (const c of candidates) {
-      if (fssync.existsSync(c)) {
-        return c;
-      }
-    }
-  }
-
-  return null;
-}
-
-async function bundleMacDynamicLibraries(sourceNode, targetNode) {
-  const libsDir = path.join(runtimeNodeDir, "lib");
-  await fs.mkdir(libsDir, { recursive: true });
-
-  const copiedByBaseName = new Map();
-  const queued = [];
-
-  const enqueueFrom = (sourceFile) => {
-    const deps = listMachODependencies(sourceFile);
-    queued.push({ sourceFile, deps });
-  };
-
-  enqueueFrom(sourceNode);
-
-  while (queued.length > 0) {
-    const { sourceFile, deps } = queued.shift();
-    for (const dep of deps) {
-      if (isSystemLibrary(dep)) {
-        continue;
-      }
-      const resolved = resolveDependencySource(dep, sourceFile, sourceNode);
-      if (!resolved || !fssync.existsSync(resolved)) {
-        continue;
-      }
-      const base = path.basename(resolved);
-      if (copiedByBaseName.has(base)) {
-        continue;
-      }
-      const dest = path.join(libsDir, base);
-      await fs.copyFile(resolved, dest);
-      await fs.chmod(dest, 0o644);
-      copiedByBaseName.set(base, { source: resolved, dest });
-      enqueueFrom(resolved);
-    }
-  }
-
-  const relinkFile = (filePath, sourceFile) => {
-    const deps = listMachODependencies(sourceFile);
-    for (const dep of deps) {
-      if (isSystemLibrary(dep)) {
-        continue;
-      }
-      const resolved = resolveDependencySource(dep, sourceFile, sourceNode);
-      if (!resolved) {
-        continue;
-      }
-      const base = path.basename(resolved);
-      if (!copiedByBaseName.has(base)) {
-        continue;
-      }
-      try {
-        run("install_name_tool", ["-change", dep, `@rpath/${base}`, filePath]);
-      } catch (_) {
-        // ignore duplicate/unchanged entries
-      }
-    }
-  };
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "axein-node-"));
+  const archivePath = path.join(tempRoot, archiveName);
+  const extractDir = path.join(tempRoot, "extract");
+  await fs.mkdir(extractDir, { recursive: true });
 
   try {
-    run("install_name_tool", ["-add_rpath", "@executable_path/lib", targetNode]);
-  } catch (_) {
-    // ignore if rpath already exists
-  }
+    run("curl", ["-fL", downloadUrl, "-o", archivePath]);
+    run("tar", ["-xzf", archivePath, "-C", extractDir]);
 
-  relinkFile(targetNode, sourceNode);
+    const srcRoot = path.join(extractDir, distName);
+    const srcBinDir = path.join(srcRoot, "bin");
+    const srcLibDir = path.join(srcRoot, "lib");
+    const srcNode = path.join(srcBinDir, "node");
 
-  for (const [base, entry] of copiedByBaseName.entries()) {
-    const filePath = entry.dest;
-    try {
-      run("install_name_tool", ["-id", `@rpath/${base}`, filePath]);
-    } catch (_) {
-      // ignore if not changeable
+    if (!fssync.existsSync(srcNode) || !fssync.existsSync(srcLibDir)) {
+      throw new Error(`Portable Node archive extracted without expected bin/lib at ${srcRoot}`);
     }
-    relinkFile(filePath, entry.source);
+
+    await fs.mkdir(path.join(runtimeNodeDir, "bin"), { recursive: true });
+    await fs.cp(srcBinDir, path.join(runtimeNodeDir, "bin"), { recursive: true });
+    await fs.cp(srcLibDir, path.join(runtimeNodeDir, "lib"), { recursive: true });
+    // npm/npx symlinks inside official tarballs point to full extracted paths.
+    // The desktop runtime only needs `node`.
+    await fs.rm(path.join(runtimeNodeDir, "bin", "npm"), { force: true });
+    await fs.rm(path.join(runtimeNodeDir, "bin", "npx"), { force: true });
+    await fs.chmod(path.join(runtimeNodeDir, "bin", "node"), 0o755);
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true });
   }
+
+  return {
+    source: `official-dist ${downloadUrl}`,
+    target: path.join(runtimeNodeDir, "bin", "node"),
+  };
 }
 
-async function main() {
+async function copyProcessNodeDefault() {
   const explicit = process.env.AXEIN_NODE_BIN ? path.resolve(process.env.AXEIN_NODE_BIN) : null;
   const sourceNode = explicit || process.execPath;
 
@@ -166,27 +85,35 @@ async function main() {
     throw new Error(`Node binary not found at ${sourceNode}`);
   }
 
-  await fs.mkdir(runtimeNodeDir, { recursive: true });
-
   const isWin = process.platform === "win32";
   const target = path.join(runtimeNodeDir, isWin ? "node.exe" : "node");
-
   await fs.copyFile(sourceNode, target);
   if (!isWin) {
     await fs.chmod(target, 0o755);
   }
-  if (process.platform === "darwin") {
-    await bundleMacDynamicLibraries(sourceNode, target);
+
+  return { source: sourceNode, target };
+}
+
+async function main() {
+  await cleanRuntimeNodeDir();
+
+  let bundled;
+  if (process.platform === "darwin" && !process.env.AXEIN_NODE_BIN) {
+    bundled = await copyPortableNodeForDarwin();
+  } else {
+    bundled = await copyProcessNodeDefault();
   }
 
   const note = [
     "Bundled Node runtime for AxEin desktop.",
-    `Source: ${sourceNode}`,
+    `Source: ${bundled.source}`,
+    `Target: ${bundled.target}`,
     `Generated at: ${new Date().toISOString()}`,
   ].join("\n");
 
   await fs.writeFile(path.join(runtimeNodeDir, "README.txt"), note, "utf8");
-  console.log(`Bundled node runtime -> ${target}`);
+  console.log(`Bundled node runtime -> ${bundled.target}`);
 }
 
 main().catch((err) => {
