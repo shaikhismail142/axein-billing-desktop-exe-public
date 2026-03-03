@@ -39,7 +39,8 @@ export async function GET(req: Request) {
         to_regclass('public.sales')         IS NOT NULL AS has_sales,
         to_regclass('public.sale_items')    IS NOT NULL AS has_sale_items,
         to_regclass('public.sale_payments') IS NOT NULL AS has_sale_payments,
-        to_regclass('public.products')      IS NOT NULL AS has_products
+        to_regclass('public.products')      IS NOT NULL AS has_products,
+        to_regclass('public.purchase_items') IS NOT NULL AS has_purchase_items
     `);
     const t = tables.rows[0] || {};
     debug.tables = t;
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
     if (!t?.has_sales) {
       const res = NextResponse.json({
         version: VERSION,
-        daily: [], breakdown: [], today: { sales_total: 0, gross_profit: 0 },
+        daily: [], breakdown: [], today: { sales_total: 0, gross_profit: 0, cost_coverage_pct: 0 },
         ...(debugFlag ? { debug } : {}),
       });
       res.headers.set("Cache-Control", "no-store");
@@ -104,6 +105,59 @@ export async function GET(req: Request) {
     }
     const has = (c: string) => itemCols.includes(c);
     const hasProductId = has("product_id");
+    const businessIdSql = Number.isFinite(Number(businessId)) ? String(Number(businessId)) : "0";
+
+    // Optional cost sources for profit calculation.
+    let productCols: string[] = [];
+    let hasProductsBusiness = false;
+    let hasProductsMeta = false;
+    let hasProductsCostPrice = false;
+    if (t.has_products) {
+      const pCols = await client.query(
+        `SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='products'`
+      );
+      productCols = pCols.rows.map((r: any) => r.column_name);
+      hasProductsBusiness = productCols.includes("business_id");
+      hasProductsMeta = productCols.includes("meta");
+      hasProductsCostPrice = productCols.includes("cost_price");
+    }
+
+    let purchaseItemCols: string[] = [];
+    let hasPurchaseItemsBusiness = false;
+    let purchaseCostExprFromItems: string | null = null;
+    let purchaseItemsHasProductId = false;
+    let purchaseItemsHasPurchaseId = false;
+    if (t.has_purchase_items) {
+      const piCols = await client.query(
+        `SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='purchase_items'`
+      );
+      purchaseItemCols = piCols.rows.map((r: any) => r.column_name);
+      hasPurchaseItemsBusiness = purchaseItemCols.includes("business_id");
+      purchaseItemsHasProductId = purchaseItemCols.includes("product_id");
+      purchaseItemsHasPurchaseId = purchaseItemCols.includes("purchase_id");
+      if (purchaseItemCols.includes("cost_price")) {
+        purchaseCostExprFromItems = "pi.cost_price";
+      } else if (purchaseItemCols.includes("purchase_rate")) {
+        purchaseCostExprFromItems = "pi.purchase_rate";
+      }
+    }
+
+    let purchasesHasBusiness = false;
+    if (t.has_purchase_items && purchaseItemsHasPurchaseId && !hasPurchaseItemsBusiness) {
+      const purchasesProbe = await client.query(
+        `SELECT 1
+           FROM information_schema.columns
+          WHERE table_schema='public'
+            AND table_name='purchases'
+            AND column_name='business_id'
+          LIMIT 1`
+      );
+      purchasesHasBusiness = (purchasesProbe.rowCount || 0) > 0;
+    }
 
     // Expressions that exist on the current schema
     const itemMoneyExpr = t.has_sale_items
@@ -121,22 +175,96 @@ export async function GET(req: Request) {
       : "0"
       : "0";
 
+    const itemRevenueForProfitExpr = t.has_sale_items
+      ? has("taxable")
+        ? "si.taxable"
+        : itemMoneyExpr
+      : "0";
+
     // If sale_items.product_id is missing, don't reference p.*
     const itemNameExpr = t.has_sale_items
       ? has("name")          ? "si.name"
       : has("product_name")  ? "si.product_name"
-      : (hasProductId ? "COALESCE(p.name, 'Unknown')" : "'Unknown'")
+      : (hasProductId && t.has_products ? "COALESCE(p.name, 'Unknown')" : "'Unknown'")
       : "'Unknown'";
 
-    const itemGpExpr = t.has_sale_items && has("gross_profit") ? "si.gross_profit" : "0";
+    const itemCostParts: string[] = [];
+    if (t.has_sale_items && has("cost_price")) itemCostParts.push("si.cost_price");
+    if (t.has_sale_items && has("purchase_rate")) itemCostParts.push("si.purchase_rate");
+    if (t.has_sale_items && has("meta")) itemCostParts.push("NULLIF(si.meta->>'cost_price','')::numeric");
+    if (hasProductId && t.has_products) {
+      if (hasProductsCostPrice) itemCostParts.push("NULLIF(p.cost_price::text,'')::numeric");
+      if (hasProductsMeta) {
+        itemCostParts.push("NULLIF(p.meta->>'cost_price','')::numeric");
+        itemCostParts.push("NULLIF(p.meta->>'purchase_price','')::numeric");
+      }
+    }
+
+    const canUsePurchaseCostAverages =
+      hasProductId && purchaseItemsHasProductId && !!purchaseCostExprFromItems;
+
+    let purchaseCostJoin = "";
+    if (canUsePurchaseCostAverages) {
+      const purchaseScopeJoin =
+        !hasPurchaseItemsBusiness && purchaseItemsHasPurchaseId && purchasesHasBusiness
+          ? "LEFT JOIN purchases pu ON pu.id = pi.purchase_id"
+          : "";
+      const purchaseScopeWhere = hasPurchaseItemsBusiness
+        ? `WHERE pi.business_id = ${businessIdSql}`
+        : !hasPurchaseItemsBusiness && purchaseItemsHasPurchaseId && purchasesHasBusiness
+        ? `WHERE pu.business_id = ${businessIdSql}`
+        : "";
+
+      purchaseCostJoin = `
+          LEFT JOIN (
+            SELECT pi.product_id, AVG(COALESCE(${purchaseCostExprFromItems}, 0))::numeric AS avg_cost
+            FROM purchase_items pi
+            ${purchaseScopeJoin}
+            ${purchaseScopeWhere}
+            GROUP BY pi.product_id
+          ) pc ON pc.product_id = si.product_id`;
+      itemCostParts.push("pc.avg_cost");
+    }
+
+    const itemCostPerUnitExpr = itemCostParts.length
+      ? `COALESCE(${itemCostParts.join(", ")}, 0)`
+      : "0";
+    const itemHasCostExpr = itemCostParts.length
+      ? `CASE WHEN (${itemCostPerUnitExpr}) > 0 THEN 1 ELSE 0 END`
+      : "0";
+
+    const itemGpExpr = t.has_sale_items && has("gross_profit")
+      ? "si.gross_profit"
+      : `((${itemRevenueForProfitExpr})::numeric - (${itemCostPerUnitExpr})::numeric * COALESCE((${itemQtyExpr})::numeric, 0))`;
 
     // products join is conditional
-    const productsJoin  = hasProductId ? "LEFT JOIN products p ON p.id = si.product_id" : "";
-    const productsJoin2 = productsJoin;
-    const productsJoin3 = productsJoin;
+    const productsJoin = hasProductId && t.has_products
+      ? `LEFT JOIN products p ON p.id = si.product_id${hasProductsBusiness ? ` AND p.business_id = ${businessIdSql}` : ""}`
+      : "";
+    const joins = [productsJoin, purchaseCostJoin].filter(Boolean).join("\n");
+    const productsJoin2 = joins;
+    const productsJoin3 = joins;
 
     debug.items = { itemsJoinKey, itemsCount, itemCols, hasProductId };
-    debug.itemExpr = { money: itemMoneyExpr, qty: itemQtyExpr, name: itemNameExpr, gp: itemGpExpr };
+    debug.itemExpr = {
+      money: itemMoneyExpr,
+      qty: itemQtyExpr,
+      name: itemNameExpr,
+      gp: itemGpExpr,
+      cost_per_unit: itemCostPerUnitExpr,
+      has_cost: itemHasCostExpr,
+    };
+    debug.costing = {
+      hasProductsBusiness,
+      hasProductsMeta,
+      hasProductsCostPrice,
+      hasPurchaseItemsBusiness,
+      purchaseItemsHasProductId,
+      purchaseItemsHasPurchaseId,
+      purchasesHasBusiness,
+      purchaseCostSource: purchaseCostExprFromItems,
+      usingPurchaseAverages: canUsePurchaseCostAverages,
+    };
 
     // 5) payments fallback
     let paymentsJoinKey: string | null = null;
@@ -241,30 +369,42 @@ export async function GET(req: Request) {
         WITH rows AS (
           SELECT
             (${itemMoneyExpr})::numeric AS line_total,
-            (${itemGpExpr})::numeric AS gp
+            (${itemGpExpr})::numeric AS gp,
+            (${itemHasCostExpr})::int AS has_cost
           FROM sales s
           JOIN sale_items si ON si.${itemsJoinKey} = s.id
+          ${productsJoin3}
           WHERE (${sdateExpr}) = $1::date
             ${salesBizFilterToday}
         )
-        SELECT COALESCE(SUM(line_total),0) AS sales_total, COALESCE(SUM(gp),0) AS gross_profit FROM rows;
+        SELECT
+          COALESCE(SUM(line_total),0) AS sales_total,
+          COALESCE(SUM(gp),0) AS gross_profit,
+          COALESCE((SUM(has_cost)::numeric / NULLIF(COUNT(*),0)) * 100, 0)::numeric AS cost_coverage_pct
+        FROM rows;
       `
       : useSalesTotals
       ? `
-        SELECT COALESCE(SUM(${salesTotalCol}),0)::numeric AS sales_total, 0::numeric AS gross_profit
+        SELECT
+          COALESCE(SUM(${salesTotalCol}),0)::numeric AS sales_total,
+          0::numeric AS gross_profit,
+          0::numeric AS cost_coverage_pct
         FROM sales s
         WHERE (${sdateExpr}) = $1::date
           ${salesBizFilterToday};
       `
       : usePayments
       ? `
-        SELECT COALESCE(SUM(COALESCE(sp.amount, sp.total, 0)),0)::numeric AS sales_total, 0::numeric AS gross_profit
+        SELECT
+          COALESCE(SUM(COALESCE(sp.amount, sp.total, 0)),0)::numeric AS sales_total,
+          0::numeric AS gross_profit,
+          0::numeric AS cost_coverage_pct
         FROM sales s
         JOIN sale_payments sp ON sp.${paymentsJoinKey} = s.id
         WHERE (${sdateExpr}) = $1::date
           ${salesBizFilterToday};
       `
-      : `SELECT 0::numeric AS sales_total, 0::numeric AS gross_profit`;
+      : `SELECT 0::numeric AS sales_total, 0::numeric AS gross_profit, 0::numeric AS cost_coverage_pct`;
 
     // Execute
     const paramsWindow = hasSalesBusiness ? [win.from, win.to, businessId] : [win.from, win.to];
@@ -300,7 +440,7 @@ export async function GET(req: Request) {
       version: VERSION,
       daily: dailyRes.rows,
       breakdown: breakdownRes.rows,
-      today: todayRes.rows[0] ?? { sales_total: 0, gross_profit: 0 },
+      today: todayRes.rows[0] ?? { sales_total: 0, gross_profit: 0, cost_coverage_pct: 0 },
       ...(debugFlag ? { debug } : {}),
     };
 
@@ -315,7 +455,7 @@ export async function GET(req: Request) {
         version: VERSION,
         daily: [],
         breakdown: [],
-        today: { sales_total: 0, gross_profit: 0 },
+        today: { sales_total: 0, gross_profit: 0, cost_coverage_pct: 0 },
         ...(debugFlag ? { debug } : {}),
       },
       { status: 200, headers: { "Cache-Control": "no-store" } }

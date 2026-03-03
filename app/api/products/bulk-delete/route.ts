@@ -20,6 +20,50 @@ async function hasProductBusinessColumn() {
   }
 }
 
+type DeleteSummary = {
+  deleted: number;
+  blocked: number;
+  blockedIds: number[];
+};
+
+async function deleteProductsOneByOne(ids: number[], scoped: boolean, businessId: number): Promise<DeleteSummary> {
+  const client = await pool.connect();
+  let deleted = 0;
+  let blocked = 0;
+  const blockedIds: number[] = [];
+
+  try {
+    await client.query("BEGIN");
+    for (const id of ids) {
+      await client.query("SAVEPOINT product_delete_sp");
+      try {
+        const res = scoped
+          ? await client.query(`DELETE FROM products WHERE id = $1 AND business_id = $2`, [id, businessId])
+          : await client.query(`DELETE FROM products WHERE id = $1`, [id]);
+        deleted += Number(res.rowCount || 0);
+        await client.query("RELEASE SAVEPOINT product_delete_sp");
+      } catch (err: any) {
+        await client.query("ROLLBACK TO SAVEPOINT product_delete_sp");
+        await client.query("RELEASE SAVEPOINT product_delete_sp");
+        // Keep deleting independent rows when FK constraints block a subset.
+        if (String(err?.code || "") === "23503") {
+          blocked += 1;
+          if (blockedIds.length < 25) blockedIds.push(id);
+          continue;
+        }
+        throw err;
+      }
+    }
+    await client.query("COMMIT");
+    return { deleted, blocked, blockedIds };
+  } catch {
+    await client.query("ROLLBACK");
+    throw new Error("Delete failed");
+  } finally {
+    client.release();
+  }
+}
+
 export async function POST(req: Request) {
   const access = await requireAnyPermission(
     req,
@@ -41,6 +85,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Provide ids[] or set all=true" }, { status: 400 });
   }
 
+  const clean = Array.isArray(ids)
+    ? ids.filter((n) => Number.isFinite(Number(n))).map(Number)
+    : [];
+
+  let targetIds: number[] = clean;
   if (all) {
     const params: any[] = scoped ? [businessId] : [];
     const where: string[] = [];
@@ -62,13 +111,26 @@ export async function POST(req: Request) {
       );
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    const { rowCount } = await pool.query(`DELETE FROM products p ${whereSql}`, params);
-    return NextResponse.json({ ok: true, deleted: rowCount, scope: "all-filtered" });
-  } else {
-    const clean = ids.filter((n) => Number.isFinite(Number(n))).map(Number);
-    const { rowCount } = scoped
-      ? await pool.query(`DELETE FROM products WHERE id = ANY($1::int[]) AND business_id = $2`, [clean, businessId])
-      : await pool.query(`DELETE FROM products WHERE id = ANY($1::int[])`, [clean]);
-    return NextResponse.json({ ok: true, deleted: rowCount, scope: "selected" });
+    const rs = await pool.query(`SELECT p.id FROM products p ${whereSql}`, params);
+    targetIds = (rs.rows || [])
+      .map((r: any) => Number(r.id))
+      .filter((n: number) => Number.isFinite(n));
   }
+
+  if (!targetIds.length) {
+    return NextResponse.json({ ok: true, deleted: 0, blocked: 0, scope: all ? "all-filtered" : "selected" });
+  }
+
+  const summary = await deleteProductsOneByOne(targetIds, scoped, businessId);
+  return NextResponse.json({
+    ok: true,
+    deleted: summary.deleted,
+    blocked: summary.blocked,
+    blocked_ids: summary.blockedIds,
+    scope: all ? "all-filtered" : "selected",
+    message:
+      summary.blocked > 0
+        ? `${summary.deleted} deleted, ${summary.blocked} blocked (linked records).`
+        : `${summary.deleted} deleted.`,
+  });
 }

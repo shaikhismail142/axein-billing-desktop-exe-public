@@ -18,7 +18,7 @@ const Legend              = dynamic(() => import('recharts').then(m => ({ defaul
 type Daily = { day: string; total: number };
 type BreakdownRowRaw = Record<string, unknown>;
 type BreakdownRow = { name: string; qty: number; total: number };
-type Today = { sales_total: number; gross_profit: number };
+type Today = { sales_total: number; gross_profit: number; cost_coverage_pct?: number };
 type TopMode = 'qty' | 'total';
 type TopRowData = BreakdownRow & { share: number; mode: TopMode };
 
@@ -109,10 +109,12 @@ export default function DashboardPage() {
         setData({
           daily: Array.isArray(j?.daily) ? j.daily : [],
           breakdown: normalizeBreakdown(j),
-          today: j?.today ?? { sales_total: 0, gross_profit: 0 },
+          today: j?.today ?? { sales_total: 0, gross_profit: 0, cost_coverage_pct: 0 },
         })
       )
-      .catch(() => setData({ daily: [], breakdown: [], today: { sales_total: 0, gross_profit: 0 } }));
+      .catch(() =>
+        setData({ daily: [], breakdown: [], today: { sales_total: 0, gross_profit: 0, cost_coverage_pct: 0 } })
+      );
   }, [fromISO, toISO, allowed]);
 
   // Derived stats for the range
@@ -148,6 +150,7 @@ export default function DashboardPage() {
 
   const salesToday = data?.today.sales_total ?? 0;
   const profitToday = data?.today.gross_profit ?? 0;
+  const costCoveragePct = Math.max(0, Math.min(100, Number(data?.today.cost_coverage_pct ?? 0)));
   const pct = salesToday > 0 ? (profitToday / salesToday) * 100 : 0;
 
   const top3 = useMemo<TopRowData[]>(() => {
@@ -243,8 +246,15 @@ export default function DashboardPage() {
           <KPI label="Profit (₹)" value={fmtINR(profitToday)} />
           <KPI label="Profit (%)" value={`${pct.toFixed(1)}%`} />
           <div style={{ flex: 1, minWidth: 260 }}>
-            <Slider value={pct} />
+            <Slider value={costCoveragePct > 0 ? pct : 0} />
           </div>
+        </div>
+        <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+          {costCoveragePct >= 95
+            ? "Profit trend is using cost data from product/purchase history."
+            : costCoveragePct > 0
+            ? `Profit trend currently uses cost data for ${costCoveragePct.toFixed(0)}% of today's line items. Add cost price or purchase entries to improve accuracy.`
+            : "Profit trend has no cost coverage yet. Add cost price in products or create purchases to make Profit % meaningful."}
         </div>
       </div>
 

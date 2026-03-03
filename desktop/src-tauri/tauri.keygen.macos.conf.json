@@ -31,10 +31,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg"],
+    "targets": ["app"],
     "resources": [
       "../runtime"
     ]
   }
 }
-

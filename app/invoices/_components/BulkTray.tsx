@@ -43,6 +43,7 @@ export default function BulkTray({ total }: { total: number }) {
 
   const selectedCount = allFiltered ? total : selectedIds.length;
   const hasAny = selectedCount > 0;
+  const deletingAllRecords = allFiltered || (total > 0 && selectedIds.length === total);
 
   const downloadFileName = useMemo(() => {
     // use filter dates when exporting ALL filtered, else mark as selected
@@ -71,11 +72,17 @@ export default function BulkTray({ total }: { total: number }) {
   const handleDelete = async () => {
     if (!ALLOW_DELETE || !hasAny || isDeleting) return;
 
-    const msg = allFiltered
-      ? `Delete ALL ${total} filtered invoice(s)? This cannot be undone.`
+    const msg = deletingAllRecords
+      ? `Warning: this will permanently delete ALL ${selectedCount} selected invoice(s). Continue?`
       : `Delete ${selectedIds.length} selected invoice(s)? This cannot be undone.`;
 
     if (!confirm(msg)) return;
+    if (deletingAllRecords) {
+      const finalConfirm = confirm(
+        "Final confirmation: all selected invoice records will be permanently deleted."
+      );
+      if (!finalConfirm) return;
+    }
 
     setIsDeleting(true);
     try {
@@ -95,9 +102,20 @@ export default function BulkTray({ total }: { total: number }) {
         body: JSON.stringify(payload),
       });
 
+      const result = await res
+        .json()
+        .catch(async () => ({ error: await res.text().catch(() => "") }));
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Delete failed (${res.status})`);
+        throw new Error(result?.error || result?.message || `Delete failed (${res.status})`);
+      }
+
+      const deleted = Number(result?.deleted || 0);
+      const blocked = Number(result?.blocked || 0);
+      if (blocked > 0) {
+        alert(
+          result?.message ||
+            `${deleted} invoice(s) deleted. ${blocked} could not be deleted due to linked records.`
+        );
       }
 
       clear();

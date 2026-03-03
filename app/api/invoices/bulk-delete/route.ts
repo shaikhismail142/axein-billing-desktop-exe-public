@@ -55,13 +55,11 @@ export async function POST(req: Request) {
       const q = (body.q || "").trim();
       const from = body.from || "";
       const to = body.to || "";
+      const customerId = Number(body.customerId || 0);
 
       const cteScopedWhere: string[] = [];
       if (hasSalesBusiness && businessRef) {
         cteScopedWhere.push(`s.business_id = ${businessRef}`);
-      }
-      if (!hasSalesBusiness && hasCustomerBusiness) {
-        cteScopedWhere.push(`c.id IS NOT NULL`);
       }
       const cteScopedWhereSql = cteScopedWhere.length ? `WHERE ${cteScopedWhere.join(" AND ")}` : "";
 
@@ -80,6 +78,7 @@ export async function POST(req: Request) {
               (to_jsonb(s)->>'created_on')::timestamp,
               (to_jsonb(s)->>'date')::timestamp
             ) AS dt,
+            COALESCE((to_jsonb(s)->>'customer_id')::int, NULL) AS customer_id,
             COALESCE(c.name, to_jsonb(s)->>'customer_name', '') AS cust
           FROM sales s
           LEFT JOIN customers c
@@ -93,6 +92,10 @@ export async function POST(req: Request) {
       if (q) { params.push(`%${q}%`); const i = params.length; where.push(`(invno ILIKE $${i} OR cust ILIKE $${i})`); }
       if (from) { params.push(from); where.push(`dt >= $${params.length}::date`); }
       if (to)   { params.push(to);   where.push(`dt < ($${params.length}::date + INTERVAL '1 day')`); }
+      if (Number.isFinite(customerId) && customerId > 0) {
+        params.push(customerId);
+        where.push(`COALESCE(customer_id, 0) = $${params.length}`);
+      }
 
       const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
       const { rows } = await client.query(
@@ -110,25 +113,7 @@ export async function POST(req: Request) {
       return new NextResponse("No ids to delete", { status: 400 });
     }
 
-    let targetIds = ids;
-    if (!hasSalesBusiness && hasCustomerBusiness) {
-      const scopedIds = await client.query(
-        `SELECT s.id
-           FROM sales s
-           LEFT JOIN customers c
-             ON c.id = COALESCE((to_jsonb(s)->>'customer_id')::int, NULL)
-            AND c.business_id = $2
-          WHERE s.id = ANY($1::int[])
-            AND c.id IS NOT NULL`,
-        [ids, businessId]
-      );
-      targetIds = (scopedIds.rows || []).map((r: any) => Number(r.id)).filter((v: number) => Number.isFinite(v));
-    }
-
-    if (!targetIds.length) {
-      await client.query("ROLLBACK");
-      return new NextResponse("No ids to delete", { status: 400 });
-    }
+    const targetIds = ids;
 
     // If you have sale_items referencing sales(id), remove children first (safe no-op if FK ON DELETE CASCADE)
     if (hasSaleItemBusiness) {
@@ -155,7 +140,7 @@ export async function POST(req: Request) {
       : await client.query(`DELETE FROM sales WHERE id = ANY($1::int[])`, [targetIds]);
     await client.query("COMMIT");
 
-    return NextResponse.json({ deleted: del.rowCount ?? 0 });
+    return NextResponse.json({ ok: true, deleted: del.rowCount ?? 0, blocked: 0 });
   } catch (e: any) {
     await client.query("ROLLBACK");
     return new NextResponse(e?.message || "Delete failed", { status: 500 });

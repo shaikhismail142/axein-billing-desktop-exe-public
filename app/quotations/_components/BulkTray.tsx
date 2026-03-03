@@ -33,6 +33,7 @@ export default function BulkTray({ total }: { total: number }) {
 
   const selectedCount = allFiltered ? total : selectedIds.length;
   const hasAny = selectedCount > 0;
+  const deletingAllRecords = allFiltered || (total > 0 && selectedIds.length === total);
   const exportFileName = allFiltered ? "quotations_filtered.csv" : "quotations_selected.csv";
 
   const handleDownload = async () => {
@@ -51,10 +52,16 @@ export default function BulkTray({ total }: { total: number }) {
 
   const handleDelete = async () => {
     if (!ALLOW_DELETE || !hasAny || isDeleting) return;
-    const msg = allFiltered
-      ? `Delete ALL ${total} filtered quotation(s)? This cannot be undone.`
+    const msg = deletingAllRecords
+      ? `Warning: this will permanently delete ALL ${selectedCount} selected quotation(s). Continue?`
       : `Delete ${selectedIds.length} selected quotation(s)? This cannot be undone.`;
     if (!confirm(msg)) return;
+    if (deletingAllRecords) {
+      const finalConfirm = confirm(
+        "Final confirmation: all selected quotation records will be permanently deleted."
+      );
+      if (!finalConfirm) return;
+    }
 
     setIsDeleting(true);
     try {
@@ -72,16 +79,28 @@ export default function BulkTray({ total }: { total: number }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      const result = await res
+        .json()
+        .catch(async () => ({ error: await res.text().catch(() => "") }));
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || "Delete failed");
+        throw new Error(result?.error || result?.message || "Delete failed");
+      }
+      const deleted = Number(result?.deleted || 0);
+      const blocked = Number(result?.blocked || 0);
+      if (blocked > 0) {
+        alert(
+          result?.message ||
+            `${deleted} quotation(s) deleted. ${blocked} could not be deleted due to linked records.`
+        );
       }
       clear();
       setAllFiltered(false);
       router.refresh();
     } catch (err) {
       console.error(err);
-      alert("Failed to delete quotations.");
+      const message =
+        err instanceof Error && err.message ? err.message : "Failed to delete quotations.";
+      alert(message);
     } finally {
       setIsDeleting(false);
     }

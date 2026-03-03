@@ -12,8 +12,11 @@ export default function BulkTray({ total }: { total: number }) {
   const sp = useSearchParams();
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const hasAny = allFiltered || selectedIds.length > 0;
+  const selectedCount = allFiltered ? total : selectedIds.length;
+  const deletingAllRecords = allFiltered || (total > 0 && selectedIds.length === total);
 
   // When nothing is selected, show the "Select all" hint
   if (!hasAny) {
@@ -54,10 +57,20 @@ export default function BulkTray({ total }: { total: number }) {
   };
 
   const handleDelete = async () => {
-    const prompt = allFiltered
-      ? `Delete ALL ${total} filtered products?`
-      : `Delete ${selectedIds.length} selected product(s)?`;
-    if (!confirm(prompt)) return;
+    if (isDeleting || !hasAny) return;
+
+    const promptText = deletingAllRecords
+      ? `Warning: this will permanently delete ALL ${selectedCount} selected product record(s). Continue?`
+      : `Delete ${selectedCount} selected product(s)?`;
+    if (!confirm(promptText)) return;
+    if (deletingAllRecords) {
+      const finalConfirm = confirm(
+        "Final confirmation: all selected product records will be permanently deleted."
+      );
+      if (!finalConfirm) return;
+    }
+
+    setIsDeleting(true);
 
     const payload = allFiltered
       ? {
@@ -68,18 +81,35 @@ export default function BulkTray({ total }: { total: number }) {
         }
       : { ids: selectedIds };
 
-    const res = await fetch("/api/products/bulk-delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      alert(msg || `Delete failed (${res.status})`);
-      return;
+    try {
+      const res = await fetch("/api/products/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json().catch(async () => ({ error: await res.text().catch(() => "") }));
+      if (!res.ok) {
+        alert(result?.error || result?.message || `Delete failed (${res.status})`);
+        return;
+      }
+
+      const deleted = Number(result?.deleted || 0);
+      const blocked = Number(result?.blocked || 0);
+      if (blocked > 0) {
+        alert(
+          result?.message ||
+            `${deleted} product(s) deleted. ${blocked} could not be deleted because they are linked to invoices/purchases/inventory history.`
+        );
+      }
+
+      clear();
+      setAllFiltered(false);
+      router.refresh();
+    } catch (e: any) {
+      alert(String(e?.message || "Delete failed"));
+    } finally {
+      setIsDeleting(false);
     }
-    clear();
-    router.refresh();
   };
 
   return (
@@ -96,14 +126,25 @@ export default function BulkTray({ total }: { total: number }) {
               type="button"
               className="px-3 py-2 rounded-xl border disabled:opacity-60"
               onClick={handleDownload}
-              disabled={downloadBusy}
+              disabled={downloadBusy || isDeleting}
             >
               {downloadBusy ? "Generating..." : allFiltered ? "Export ALL" : "Export selected"}
             </button>
-            <button className="px-3 py-2 rounded-xl border bg-red-600 text-white" onClick={handleDelete}>
+            <button
+              className="px-3 py-2 rounded-xl border bg-red-600 text-white disabled:opacity-60"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
               {allFiltered ? "Delete ALL" : "Delete selected"}
             </button>
-            <button className="px-3 py-2 rounded-xl border" onClick={() => clear()}>
+            <button
+              className="px-3 py-2 rounded-xl border"
+              onClick={() => {
+                clear();
+                setAllFiltered(false);
+              }}
+              disabled={isDeleting}
+            >
               Clear
             </button>
           </div>

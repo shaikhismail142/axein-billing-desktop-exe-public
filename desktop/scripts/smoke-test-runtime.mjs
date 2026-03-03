@@ -242,6 +242,26 @@ async function main() {
       throw new Error("Product create smoke failed: missing item id");
     }
 
+    const orphanProduct = await requestJson(`${baseUrl}/api/products`, {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        name: `Smoke Product Orphan ${suffix}`,
+        category: "general",
+        price: 90,
+        selling_price: 90,
+        stock_qty: 5,
+        gst_slab: 18,
+      }),
+    });
+    if (!orphanProduct.res.ok || !orphanProduct.json?.ok) {
+      throw new Error(`Orphan product create smoke failed: ${orphanProduct.json?.error || orphanProduct.res.statusText}`);
+    }
+    const orphanProductId = Number(orphanProduct.json?.item?.id || 0);
+    if (!Number.isFinite(orphanProductId) || orphanProductId <= 0) {
+      throw new Error("Orphan product create smoke failed: missing item id");
+    }
+
     await expectOkResponse(
       `${baseUrl}/api/products?page=1&perPage=20&q=${encodeURIComponent(`Smoke Product ${suffix}`)}`,
       { headers: adminHeaders() },
@@ -366,6 +386,46 @@ async function main() {
       "Movers report"
     );
     await expectOkResponse(`${baseUrl}/api/reports/dead-stock?days=30`, { headers: adminHeaders() }, "Dead stock report");
+
+    const bulkDeleteProducts = await requestJson(`${baseUrl}/api/products/bulk-delete`, {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ ids: [productId, orphanProductId] }),
+    });
+    if (!bulkDeleteProducts.res.ok || !bulkDeleteProducts.json?.ok) {
+      throw new Error(
+        `Products bulk-delete smoke failed: ${bulkDeleteProducts.json?.error || bulkDeleteProducts.res.statusText}`
+      );
+    }
+    const productsDeleted = Number(bulkDeleteProducts.json?.deleted || 0);
+    const productsBlocked = Number(bulkDeleteProducts.json?.blocked || 0);
+    if (productsDeleted < 1 || productsBlocked < 1) {
+      throw new Error(
+        `Products bulk-delete smoke failed: expected partial delete (deleted>=1 and blocked>=1), got deleted=${productsDeleted}, blocked=${productsBlocked}`
+      );
+    }
+
+    const bulkDeleteInvoices = await requestJson(`${baseUrl}/api/invoices/bulk-delete`, {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ ids: [saleId] }),
+    });
+    if (!bulkDeleteInvoices.res.ok || !bulkDeleteInvoices.json?.ok || Number(bulkDeleteInvoices.json?.deleted || 0) < 1) {
+      throw new Error(
+        `Invoices bulk-delete smoke failed: ${bulkDeleteInvoices.json?.error || bulkDeleteInvoices.res.statusText}`
+      );
+    }
+
+    const bulkDeleteQuotations = await requestJson(`${baseUrl}/api/quotations/bulk-delete`, {
+      method: "POST",
+      headers: adminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ ids: [quotationId] }),
+    });
+    if (!bulkDeleteQuotations.res.ok || !bulkDeleteQuotations.json?.ok || Number(bulkDeleteQuotations.json?.deleted || 0) < 1) {
+      throw new Error(
+        `Quotations bulk-delete smoke failed: ${bulkDeleteQuotations.json?.error || bulkDeleteQuotations.res.statusText}`
+      );
+    }
 
     console.log("Desktop runtime smoke test passed.");
   } finally {

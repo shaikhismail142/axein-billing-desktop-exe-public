@@ -38,40 +38,50 @@ jobs:
           rm -rf desktop/release/macos-dmg
           mkdir -p desktop/release/macos-dmg
 
-      - name: Build Billing DMG (arm64)
+      - name: Resolve app version
+        run: |
+          echo "AXEIN_APP_VERSION=$(node -e 'console.log(require(\"./desktop/src-tauri/tauri.macos.conf.json\").version)')" >> "$GITHUB_ENV"
+
+      - name: Build Billing app (arm64)
         run: npm run desktop:build:macos
 
-      - name: Collect Billing DMG (arm64)
+      - name: Package Billing DMG (arm64)
         run: |
-          ls -la desktop/src-tauri/target/release/bundle/dmg || true
-          cp -f desktop/src-tauri/target/release/bundle/dmg/*.dmg desktop/release/macos-dmg/ || true
+          node ./desktop/scripts/package-macos-dmg.mjs \
+            --app "./desktop/src-tauri/target/release/bundle/macos/AxEin Billing Desktop.app" \
+            --out "./desktop/release/macos-dmg/AxEin Billing Desktop_${AXEIN_APP_VERSION}_aarch64.dmg" \
+            --volname "AxEin Billing Desktop"
 
-      - name: Build staff Keygen DMG (arm64)
+      - name: Build staff Keygen app (arm64)
         if: ${{ inputs.build_keygen }}
         env:
           AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64: ${{ secrets.AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64 }}
         run: npm run desktop:keygen:build:macos
 
-      - name: Collect Keygen DMG (arm64)
+      - name: Package Keygen DMG (arm64)
         if: ${{ inputs.build_keygen }}
         run: |
-          ls -la desktop/src-tauri/target/release/bundle/dmg || true
-          cp -f desktop/src-tauri/target/release/bundle/dmg/*.dmg desktop/release/macos-dmg/ || true
+          node ./desktop/scripts/package-macos-dmg.mjs \
+            --app "./desktop/src-tauri/target/release/bundle/macos/AxEin License Keygen.app" \
+            --out "./desktop/release/macos-dmg/AxEin License Keygen_${AXEIN_APP_VERSION}_aarch64.dmg" \
+            --volname "AxEin License Keygen"
 
       - name: Add Intel build target
         run: rustup target add x86_64-apple-darwin
 
-      - name: Build Billing DMG (x86_64)
+      - name: Build Billing app (x86_64)
         run: |
           npm run desktop:bundle-node
           npm run desktop:tauri -- build --target x86_64-apple-darwin --config ./desktop/src-tauri/tauri.macos.conf.json
 
-      - name: Collect Billing DMG (x86_64)
+      - name: Package Billing DMG (x86_64)
         run: |
-          ls -la desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg || true
-          cp -f desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg desktop/release/macos-dmg/ || true
+          node ./desktop/scripts/package-macos-dmg.mjs \
+            --app "./desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/AxEin Billing Desktop.app" \
+            --out "./desktop/release/macos-dmg/AxEin Billing Desktop_${AXEIN_APP_VERSION}_x64.dmg" \
+            --volname "AxEin Billing Desktop"
 
-      - name: Build staff Keygen DMG (x86_64)
+      - name: Build staff Keygen app (x86_64)
         if: ${{ inputs.build_keygen }}
         env:
           AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64: ${{ secrets.AXEIN_KEYGEN_PRIVATE_KEY_PEM_B64 }}
@@ -79,11 +89,13 @@ jobs:
           npm run desktop:bundle-node
           npm run desktop:tauri -- build --target x86_64-apple-darwin --config ./desktop/src-tauri/tauri.keygen.macos.conf.json
 
-      - name: Collect Keygen DMG (x86_64)
+      - name: Package Keygen DMG (x86_64)
         if: ${{ inputs.build_keygen }}
         run: |
-          ls -la desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg || true
-          cp -f desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg desktop/release/macos-dmg/ || true
+          node ./desktop/scripts/package-macos-dmg.mjs \
+            --app "./desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/AxEin License Keygen.app" \
+            --out "./desktop/release/macos-dmg/AxEin License Keygen_${AXEIN_APP_VERSION}_x64.dmg" \
+            --volname "AxEin License Keygen"
 
       - name: Upload DMG artifacts
         uses: actions/upload-artifact@v4

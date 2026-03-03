@@ -50,9 +50,6 @@ export async function POST(req: Request) {
       if (hasQuotationBusiness && businessRef) {
         where.push(`q.business_id = ${businessRef}`);
       }
-      if (!hasQuotationBusiness && hasCustomerBusiness) {
-        where.push(`c.id IS NOT NULL`);
-      }
 
       if (q) {
         params.push(`%${q}%`);
@@ -102,7 +99,7 @@ export async function POST(req: Request) {
     const deleted =
       (del as any)?.rowCount ??
       (Array.isArray((del as any)?.rows) ? (del as any).rows.length : 0);
-    return NextResponse.json({ deleted });
+    return NextResponse.json({ ok: true, deleted, blocked: 0 });
   } catch (e: any) {
     await client.query("ROLLBACK");
     return new NextResponse(e?.message || "Delete failed", { status: 500 });
