@@ -382,6 +382,36 @@ export async function POST(req: NextRequest) {
 
     // ---------- Optional inventory posting ----------
     if (body.add_to_inventory) {
+      const productCols = await getTableColumns(client, "products");
+      const hasProductsBusiness = productCols.has("business_id");
+      for (const it of body.items) {
+        const qty = normQty(it.qty);
+        const cost = normMoney(it.cost_price);
+        const sets: string[] = [];
+        if (productCols.has("meta")) {
+          sets.push(`meta = jsonb_set(
+            jsonb_set(
+              COALESCE(meta, '{}'::jsonb),
+              '{stock_qty}',
+              to_jsonb(COALESCE(NULLIF(meta->>'stock_qty','')::numeric, NULLIF(meta->>'stock','')::numeric, 0) + $2::numeric),
+              true
+            ),
+            '{cost_price}', to_jsonb($3::numeric), true
+          )`);
+        }
+        if (productCols.has("stock_qty")) sets.push("stock_qty = COALESCE(stock_qty, 0) + $2::integer");
+        if (productCols.has("stock")) sets.push("stock = COALESCE(stock, 0) + $2::integer");
+        if (productCols.has("cost_price")) sets.push("cost_price = $3::numeric");
+        if (productCols.has("updated_at")) sets.push("updated_at = NOW()");
+        if (sets.length) {
+          await client.query(
+            `UPDATE products SET ${sets.join(", ")}
+              WHERE id = $1${hasProductsBusiness ? " AND business_id = $4" : ""}`,
+            hasProductsBusiness ? [it.product_id, qty, cost, businessId] : [it.product_id, qty, cost]
+          );
+        }
+      }
+
       const batchInfo = await detectBatchesTable(client);
       if (batchInfo) {
         const { table: batchesTable, cols: bCols } = batchInfo;
@@ -437,15 +467,16 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Mark posted=true (if purchases.meta exists)
-        if (purchasesCols.has("meta")) {
-          await client.query(
-            `UPDATE purchases
-               SET meta = jsonb_set(coalesce(meta,'{}'::jsonb), '{posted}', 'true'::jsonb, true)
-             WHERE id = $1${hasPurchasesBusiness ? " AND business_id = $2" : ""}`,
-            hasPurchasesBusiness ? [purchase_id, businessId] : [purchase_id]
-          );
-        }
+      }
+
+      // Mark posted even when this installation does not use batch tracking.
+      if (purchasesCols.has("meta")) {
+        await client.query(
+          `UPDATE purchases
+             SET meta = jsonb_set(coalesce(meta,'{}'::jsonb), '{posted}', 'true'::jsonb, true)
+           WHERE id = $1${hasPurchasesBusiness ? " AND business_id = $2" : ""}`,
+          hasPurchasesBusiness ? [purchase_id, businessId] : [purchase_id]
+        );
       }
     }
 

@@ -62,6 +62,10 @@ const quotationDetail = read("app/api/quotations/[id]/route.ts");
 assert.doesNotMatch(quotationDetail, /c\.meta\s+as customer_meta/);
 assert.doesNotMatch(quotationDetail, /discount, meta\s+from quotation_items/);
 
+const purchasesRoute = read("app/api/purchases/route.ts");
+assert.match(purchasesRoute, /'\{stock_qty\}'/);
+assert.match(purchasesRoute, /'\{cost_price\}'/);
+
 const licenseBanner = read("app/_components/LicenseBanner.tsx");
 assert.match(licenseBanner, /window\.location\.hostname === 'billing\.axein\.in'/);
 assert.match(licenseBanner, /if \(hostedPortal !== false/);
