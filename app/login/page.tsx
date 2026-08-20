@@ -13,7 +13,12 @@ export default function LoginPage() {
   const [hostedPortal, setHostedPortal] = useState(false);
 
   useEffect(() => {
-    setHostedPortal(window.location.hostname === "billing.axein.in");
+    const hosted = window.location.hostname === "billing.axein.in";
+    setHostedPortal(hosted);
+    // Defenzo SSO redirects authenticated users directly to their requested
+    // module. Redirecting again here can race the server guard and create a
+    // /login <-> /dashboard loop when an old session cookie is present.
+    if (hosted) return;
     (async () => {
       try {
         const res = await fetch("/api/auth/session", { cache: "no-store" });

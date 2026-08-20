@@ -49,6 +49,7 @@ assert.match(ssoExchange, /process\.env\.AXEIN_PUBLIC_URL/);
 const loginPage = read("app/login/page.tsx");
 assert.match(loginPage, /window\.location\.hostname === "billing\.axein\.in"/);
 assert.match(loginPage, /Continue with Defenzo/);
+assert.match(loginPage, /if \(hosted\) return/);
 
 const chromeShell = read("app/components/ChromeShell.tsx");
 assert.match(chromeShell, /"\/login"/);
