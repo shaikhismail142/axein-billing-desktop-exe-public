@@ -104,7 +104,8 @@ export async function POST(req: Request) {
     }
 
     const user = userRs.rows[0] as any;
-    if (isSaasDeployment() && !Boolean(user.is_system_admin)) {
+    const hasLocalPassword = String(user.password_hash || "").trim().length > 0;
+    if (isSaasDeployment() && !Boolean(user.is_system_admin) && !hasLocalPassword) {
       await audit(Number(user.business_id), "auth.login.denied", "user", String(user.id), null, {
         email,
         reason: "sso_required",
