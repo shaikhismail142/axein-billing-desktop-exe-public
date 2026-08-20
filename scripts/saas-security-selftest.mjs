@@ -27,6 +27,9 @@ for (const table of ["tenant_entitlements", "integration_clients", "integration_
 }
 assert.match(migration, /settings_business_key_uq ON settings \(business_id, key\)/);
 
+const settingsTenantMigration = read("db/migrations/20260820d_settings_tenant_unique.sql");
+assert.match(settingsTenantMigration, /DROP INDEX IF EXISTS public\.idx_settings_key_unique/);
+
 const entitlement = read("app/lib/tenant-entitlements.ts");
 assert.match(entitlement, /tenant_status/);
 
