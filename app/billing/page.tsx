@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from "next/link";
+import { Plus, RotateCcw, Search, Trash2, UserRound, X } from "lucide-react";
 import {
   computeCustomFieldTotals,
   getCustomFieldOptions,
@@ -92,6 +93,8 @@ export default function Billing() {
   const [extraAmount, setExtraAmount] = useState<number>(0);
   const [customFields, setCustomFields] = useState<CustomInvoiceField[]>([]);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  const [hiddenOptionalFields, setHiddenOptionalFields] = useState<Set<string>>(() => new Set());
+  const [hiddenSections, setHiddenSections] = useState<Set<string>>(() => new Set());
 
   // Payment
   const [paymentMode, setPaymentMode] = useState<"paid" | "partial" | "pending">("paid");
@@ -206,6 +209,22 @@ export default function Billing() {
   }
   function removeItem(i: number) { setItems((prev) => prev.filter((_, idx) => idx !== i)); }
 
+  function hideOptionalField(fieldKey: string) {
+    setHiddenOptionalFields((prev) => new Set(prev).add(fieldKey));
+    setCustomFieldValues((prev) => {
+      const next = { ...prev };
+      delete next[fieldKey];
+      return next;
+    });
+  }
+
+  function hideOptionalSection(section: string) {
+    setHiddenSections((prev) => new Set(prev).add(section));
+    if (section === "charge") setExtraAmount(0);
+    if (section === "notes") setNotes("");
+    if (section === "terms") setTerms("");
+  }
+
   function lineTotals(it: Item) {
     const gross = it.qty * it.unit_price;
     const discount = +(gross * (Number(it.discount_pct || 0) / 100)).toFixed(2);
@@ -319,37 +338,40 @@ export default function Billing() {
   }
 
   return (
-    <div>
-        <div className="card" style={{ padding: 16 }}>
-          <h1 style={{ marginTop: 0 }}>Quick Billing</h1>
-          <p className="text-xs opacity-70">Create a bill fast — add customer, items, then confirm payment.</p>
-
-        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span className="muted" style={{ fontSize: 12 }}>Invoice date</span>
+    <main className="quick-billing-workspace">
+        <div className="quick-billing-shell">
+          <header className="quick-billing-titlebar">
+            <div>
+              <div className="quick-billing-kicker">Sales counter</div>
+              <h1>New Invoice</h1>
+              <p>Create the invoice from top to bottom. Optional details can be hidden for faster billing.</p>
+            </div>
+            <div className="quick-billing-date">
+              <label htmlFor="quick-invoice-date">Invoice date</label>
               <input
+                id="quick-invoice-date"
                 className="input"
                 type="date"
                 value={invoiceDate}
                 onChange={(e) => setInvoiceDate(e.target.value)}
               />
-            </label>
-            <div className="muted" style={{ fontSize: 12 }}>
-              Use this to create bills for older dates.
+              <span>Backdated invoices are supported.</span>
             </div>
-          </div>
-        </div>
+          </header>
 
-        {/* Customer (optional) */}
-        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
-            <div>
-              <label style={{ fontSize: 12, color: 'var(--muted)' }}>Customer (optional)</label>
+        <section className="quick-billing-section quick-customer-section">
+          <div className="quick-section-heading">
+            <div className="quick-section-icon"><UserRound size={18} /></div>
+            <div><h2>Customer details</h2><p>Optional for walk-in sales.</p></div>
+          </div>
+          <div className="quick-customer-row">
+            <div className="quick-field-grow">
+              <label htmlFor="quick-customer-name">Customer name <span>(optional)</span></label>
               <div style={{ position: 'relative' }}>
                 <input
+                  id="quick-customer-name"
                   className="input"
-                  placeholder="Type to search or enter a new customer name"
+                  placeholder="Search an existing customer or type a new customer name"
                   value={customerName || custQ}
                   onChange={(e) => {
                     if (customerId) setCustomerId(null);
@@ -378,23 +400,34 @@ export default function Billing() {
                 )}
               </div>
             </div>
-            <div>
-              <button className="btn" onClick={clearCustomer}>Clear</button>
-            </div>
+            <button className="btn quick-clear-button" onClick={clearCustomer} disabled={!customerName && !customerId}>
+              <X size={16} /> Clear
+            </button>
           </div>
           {customerId && (
             <div style={{ marginTop: 6, color: 'var(--success)', fontSize: 12 }}>
-              ✓ Linked to existing customer (ID: {customerId})
+              Linked to an existing customer record
             </div>
           )}
-        </div>
+        </section>
+
+        {(hiddenOptionalFields.size > 0 || hiddenSections.size > 0) && (
+          <div className="quick-restore-bar">
+            <span>Hidden optional fields: {hiddenOptionalFields.size + hiddenSections.size}</span>
+            <button className="btn" type="button" onClick={() => { setHiddenOptionalFields(new Set()); setHiddenSections(new Set()); }}>
+              <RotateCcw size={15} /> Restore optional fields
+            </button>
+          </div>
+        )}
 
         {/* Template and custom invoice fields */}
         {customFields.length > 0 ? (
-          <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <section className="quick-billing-section">
+            <div className="quick-section-heading compact"><div><h2>Invoice details</h2><p>Fields marked optional can be removed from this invoice.</p></div></div>
             <div className="grid md:grid-cols-2 gap-3">
               {[...customFields]
                 .sort((a, b) => Number(a.position || 0) - Number(b.position || 0) || a.id - b.id)
+                .filter((field) => field.required || !hiddenOptionalFields.has(field.field_key))
                 .map((field) => {
                   const options = getCustomFieldOptions(field);
                   const value = customFieldValues[field.field_key] || "";
@@ -403,11 +436,11 @@ export default function Billing() {
                     field.data_type === "price" ||
                     field.data_type === "tax_percent";
                   return (
-                    <div key={field.field_key}>
-                      <label style={{ fontSize: 12, color: "var(--muted)" }}>
-                        {field.label}
-                        {field.required ? " *" : ""}
-                      </label>
+                    <div className="quick-custom-field" key={field.field_key}>
+                      <div className="quick-field-label">
+                        <label>{field.label} <span>{field.required ? "Required" : "Optional"}</span></label>
+                        {!field.required && <button type="button" title={`Remove ${field.label}`} aria-label={`Remove ${field.label}`} onClick={() => hideOptionalField(field.field_key)}><X size={15} /></button>}
+                      </div>
 
                       {field.data_type === "dropdown" ? (
                         <select
@@ -465,21 +498,15 @@ export default function Billing() {
                   );
                 })}
             </div>
-            <div className="mt-2 text-xs opacity-70">
-              These fields are configured from Settings &gt; Invoice Custom Fields and shown in invoice outputs.
-            </div>
-          </div>
+          </section>
         ) : null}
 
         {/* Product search / scan */}
-        <div style={{ position: 'relative', marginBottom: 12 }}>
-          <label style={{ fontSize: 12, color: 'var(--muted)' }}>Product search / scan</label>
-          <input
-            className="input"
-            placeholder="Scan barcode or search product..."
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+        <section className="quick-billing-section quick-items-section">
+          <div className="quick-section-heading compact"><div><h2>Invoice items</h2><p>Scan a barcode or search the product catalogue.</p></div><span className="quick-item-count">{items.length} item{items.length === 1 ? "" : "s"}</span></div>
+        <div className="quick-product-search">
+          <Search size={18} />
+          <input className="input" placeholder="Search by product name, SKU or scan barcode" value={q} onChange={(e) => setQ(e.target.value)} />
           {!!suggest.length && (
             <div
               className="card"
@@ -489,14 +516,14 @@ export default function Billing() {
                 <div
                   key={p.id}
                   onClick={() => addProduct(p)}
-                  style={{ padding: '8px 10px', borderTop: '1px solid var(--glass-brd)', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+                  className="quick-product-option"
                 >
                   <span>
                     {p.name} {p.sku ? `(${p.sku})` : ''}
                     {typeof p.stock_qty === 'number' ? ` • Stock: ${p.stock_qty}` : ''}
                     {p.category ? ` • ${p.category}` : ''}
                   </span>
-                  <b>{inr(Number((p.selling_price ?? p.price) || 0))}</b>
+                  <span><b>{inr(Number((p.selling_price ?? p.price) || 0))}</b><Plus size={17} /></span>
                 </div>
               ))}
             </div>
@@ -504,9 +531,9 @@ export default function Billing() {
         </div>
 
         {/* Items grid */}
-        <div className="card" style={{ padding: 0 }}>
+        <div className="quick-items-table">
           <div className="table-wrap">
-            <table className="table">
+            <table className="table" aria-label="Invoice line items">
               <thead>
                 <tr>
                   <th style={{ width: 32 }}>#</th>
@@ -520,7 +547,7 @@ export default function Billing() {
                   <th style={{ width: 100, textAlign: 'right' }}>Disc %</th>
                   <th style={{ width: 80, textAlign: 'right' }}>GST %</th>
                   <th style={{ width: 140, textAlign: 'right' }}>Line Total</th>
-                  <th style={{ width: 80 }}></th>
+                  <th style={{ width: 52 }}><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -596,7 +623,7 @@ export default function Billing() {
                       </td>
                       <td style={{ textAlign: 'right' }}>{inr(t.total)}</td>
                       <td>
-                        <button className="btn" onClick={() => removeItem(i)}>Remove</button>
+                        <button className="quick-icon-button danger" type="button" title={`Remove ${it.name}`} aria-label={`Remove ${it.name}`} onClick={() => removeItem(i)}><Trash2 size={17} /></button>
                       </td>
                     </tr>
                   );
@@ -604,7 +631,7 @@ export default function Billing() {
                 {items.length === 0 && (
                   <tr>
                     <td colSpan={12} className="muted">
-                      Add products using search above.
+                      <div className="quick-empty-items"><Plus size={18} /> Search above to add the first product.</div>
                     </td>
                   </tr>
                 )}
@@ -612,11 +639,12 @@ export default function Billing() {
             </table>
           </div>
         </div>
+        </section>
 
         {/* Extra + Notes/Terms */}
-        <div className="grid gap-3 md:grid-cols-2" style={{ marginTop: 12 }}>
-          <div className="card" style={{ padding: 12 }}>
-            <div className="mb-2 text-sm font-semibold">Additional / Service Charge</div>
+        <div className="quick-optional-grid">
+          {!hiddenSections.has("charge") && <section className="quick-billing-section">
+            <div className="quick-field-label"><label>Additional charge <span>Optional</span></label><button type="button" title="Remove additional charge" onClick={() => hideOptionalSection("charge")}><X size={15} /></button></div>
             <div className="flex items-center gap-2">
               <input
                 className="input"
@@ -636,14 +664,18 @@ export default function Billing() {
               />
             </div>
             <div className="mt-2 text-xs opacity-70">This will be added to the total and shown on the invoice.</div>
-          </div>
+          </section>}
 
-          <div className="card" style={{ padding: 12 }}>
-            <div className="mb-2 text-sm font-semibold">Notes (optional)</div>
+          <section className="quick-billing-section">
+            {!hiddenSections.has("notes") && <div className="quick-optional-block">
+            <div className="quick-field-label"><label>Invoice notes <span>Optional</span></label><button type="button" title="Remove invoice notes" onClick={() => hideOptionalSection("notes")}><X size={15} /></button></div>
             <textarea className="input" style={{ minHeight: 70 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
-            <div className="mt-2 text-sm font-semibold">Terms & Conditions (optional)</div>
+            </div>}
+            {!hiddenSections.has("terms") && <div className="quick-optional-block">
+            <div className="quick-field-label"><label>Terms &amp; conditions <span>Optional</span></label><button type="button" title="Remove terms and conditions" onClick={() => hideOptionalSection("terms")}><X size={15} /></button></div>
             <textarea className="input" style={{ minHeight: 70 }} value={terms} onChange={(e) => setTerms(e.target.value)} />
-          </div>
+            </div>}
+          </section>
         </div>
 
         {/* Summary + Payment */}
@@ -671,7 +703,7 @@ export default function Billing() {
           </div>
         </div>
 
-        <div className="card" style={{ padding: 12, marginTop: 12 }}>
+        <section className="quick-billing-section quick-payment-section">
           <div className="text-sm font-semibold mb-2">Payment</div>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex items-center gap-2">
@@ -723,15 +755,15 @@ export default function Billing() {
               Pending: <b>{inr(pendingAmount)}</b>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+        <div className="quick-billing-actions">
           <button className="btn btn-primary" onClick={save} disabled={saving || items.length === 0}>
             {saving ? 'Saving...' : 'Save & View Invoice'}
           </button>
-          <Link href="/invoices/">Go to Invoices</Link>
+          <Link className="btn" href="/invoices/">View invoice history</Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
