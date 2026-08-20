@@ -58,6 +58,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "tenant_unavailable", entitlement }, { status: 403 });
   }
 
+  // Defenzo administrators use passwordless SSO. Every other employee must
+  // authenticate with an AxEin account so its restricted role is authoritative.
+  if (sourceRole !== "admin") {
+    const publicOrigin = String(process.env.AXEIN_PUBLIC_URL || "").trim();
+    const login = new URL("/login", publicOrigin || req.url);
+    login.searchParams.set("business_code", "defenzo");
+    login.searchParams.set("next", safeNextPath(body.next));
+    const response = NextResponse.redirect(login, 303);
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  }
+
   const db = await pool.connect();
   try {
     await db.query("BEGIN");

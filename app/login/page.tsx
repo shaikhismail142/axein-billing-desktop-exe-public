@@ -15,8 +15,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     const hosted = window.location.hostname === "billing.axein.in";
+    const params = new URLSearchParams(window.location.search);
     setHostedPortal(hosted);
-    setDefenzoEntry(hosted && new URLSearchParams(window.location.search).get("provider") === "defenzo");
+    setDefenzoEntry(hosted && params.get("provider") === "defenzo");
+    const businessCode = String(params.get("business_code") || "").trim();
+    if (businessCode) setForm((prev) => ({ ...prev, business_code: businessCode }));
     // Defenzo SSO redirects authenticated users directly to their requested
     // module. Redirecting again here can race the server guard and create a
     // /login <-> /dashboard loop when an old session cookie is present.
@@ -54,7 +57,9 @@ export default function LoginPage() {
         throw new Error(String(data?.error || "Login failed"));
       }
       // Full navigation avoids WebView cookie propagation issues.
-      window.location.assign("/dashboard");
+      const requested = new URLSearchParams(window.location.search).get("next") || "/dashboard";
+      const destination = requested.startsWith("/") && !requested.startsWith("//") ? requested : "/dashboard";
+      window.location.assign(destination);
     } catch (err: any) {
       setError(String(err?.message || "Login failed"));
     } finally {
