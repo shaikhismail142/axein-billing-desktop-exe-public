@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import AnalogClockIST from '@/app/components/AnalogClockIST';
+import { ArrowRight, CalendarDays, ChartNoAxesCombined, IndianRupee, PackageCheck, Percent, TrendingUp } from 'lucide-react';
 
 const ResponsiveContainer = dynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false });
 const ComposedChart       = dynamic(() => import('recharts').then(m => m.ComposedChart), { ssr: false });
@@ -189,37 +190,36 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="container">
+    <div className="dashboard-shell">
       {/* Header / Hero */}
-      <div className="card" style={{ padding: 16, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Dashboard & Reports</h1>
-          <div className="muted" style={{ marginTop: 4 }}>At-a-glance sales and inventory insights.</div>
+      <section className="dashboard-hero">
+        <div className="dashboard-hero-copy">
+          <span className="dashboard-kicker"><ChartNoAxesCombined size={14} /> Business command centre</span>
+          <h1>Dashboard & Reports</h1>
+          <p>Track today’s performance, product momentum, and sales trends from one clear workspace.</p>
+          <a className="dashboard-report-link" href="/dashboard/reports">View detailed reports <ArrowRight size={16} /></a>
         </div>
-        <a className="btn" href="/dashboard/reports">Open Detailed Reports</a>
-        <div className="glass" style={{ padding: 8, borderRadius: 16 }}>
-          <AnalogClockIST size={140} />
+        <div className="dashboard-clock">
+          <AnalogClockIST size={118} />
         </div>
-      </div>
+      </section>
 
       {/* Range & Mode controls */}
-      <div className="card" style={{ padding: 12, margin: '8px 0 12px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span className="muted" style={{ fontSize: 12 }}>Range:</span>
-        <button className="glass-btn" onClick={() => setRange({ kind: 'preset', days: 7 })}  aria-pressed={range.kind==='preset'&&range.days===7}>7d</button>
-        <button className="glass-btn" onClick={() => setRange({ kind: 'preset', days: 14 })} aria-pressed={range.kind==='preset'&&range.days===14}>14d</button>
-        <button className="glass-btn" onClick={() => setRange({ kind: 'preset', days: 30 })} aria-pressed={range.kind==='preset'&&range.days===30}>30d</button>
-        <button className="glass-btn" onClick={() => setRange({ kind: 'preset', days: 90 })} aria-pressed={range.kind==='preset'&&range.days===90}>90d</button>
-
-        <span className="muted" style={{ marginLeft: 8, fontSize: 12 }}>Custom:</span>
-        <input type="date" value={range.kind==='custom'?range.from:fromISO}
-          onChange={(e)=>setRange({kind:'custom',from:e.target.value,to:range.kind==='custom'?range.to:toISO})}/>
-        <span aria-hidden>→</span>
-        <input type="date" value={range.kind==='custom'?range.to:toISO}
-          onChange={(e)=>setRange({kind:'custom',from:range.kind==='custom'?range.from:fromISO,to:e.target.value})}/>
-
-        {/* Ranking mode dropdown */}
-        <div style={{ marginLeft: 'auto', display:'flex', alignItems:'center', gap: 8 }}>
-          <span className="muted" style={{ fontSize: 12 }}>Top products by</span>
+      <section className="dashboard-filters card">
+        <div className="dashboard-filter-group">
+          <span className="dashboard-filter-label"><CalendarDays size={14} /> Reporting period</span>
+          <div className="dashboard-presets">
+            {[7, 14, 30, 90].map((days) => (
+              <button key={days} className="glass-btn" onClick={() => setRange({ kind: 'preset', days: days as 7 | 14 | 30 | 90 })} aria-pressed={range.kind==='preset'&&range.days===days}>{days}d</button>
+            ))}
+          </div>
+        </div>
+        <div className="dashboard-date-range">
+          <label>From<input type="date" value={range.kind==='custom'?range.from:fromISO} onChange={(e)=>setRange({kind:'custom',from:e.target.value,to:range.kind==='custom'?range.to:toISO})}/></label>
+          <span aria-hidden>→</span>
+          <label>To<input type="date" value={range.kind==='custom'?range.to:toISO} onChange={(e)=>setRange({kind:'custom',from:range.kind==='custom'?range.from:fromISO,to:e.target.value})}/></label>
+        </div>
+        <label className="dashboard-ranking">Rank products by
           <select
             value={rankMode}
             onChange={(e)=>setRankMode(e.target.value as TopMode)}
@@ -228,66 +228,50 @@ export default function DashboardPage() {
             <option value="qty">Quantity</option>
             <option value="total">Amount</option>
           </select>
-        </div>
-
-        <div className="muted" style={{ marginLeft: 8, fontSize: 12 }}>
-          Showing: <b>{fromISO}</b> → <b>{toISO}</b>
-        </div>
-      </div>
+        </label>
+      </section>
 
       {/* Today KPIs */}
-      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <h2 style={{ margin: 0 }}>Today</h2>
-          <span className="muted" style={{ fontSize: 12 }}>live snapshot</span>
+      <section className="dashboard-section">
+        <div className="dashboard-section-heading">
+          <div><span className="dashboard-kicker">Live snapshot</span><h2>Today’s performance</h2></div>
+          <span>{fromISO} to {toISO}</span>
         </div>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-          <KPI label="Sales (₹)" value={fmtINR(salesToday)} />
-          <KPI label="Profit (₹)" value={fmtINR(profitToday)} />
-          <KPI label="Profit (%)" value={`${pct.toFixed(1)}%`} />
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <Slider value={costCoveragePct > 0 ? pct : 0} />
+        <div className="dashboard-kpi-grid">
+          <KPI label="Sales" value={fmtINR(salesToday)} icon={IndianRupee} tone="blue" />
+          <KPI label="Gross profit" value={fmtINR(profitToday)} icon={TrendingUp} tone="green" />
+          <KPI label="Profit margin" value={`${pct.toFixed(1)}%`} icon={Percent} tone="amber" />
+          <div className="dashboard-coverage card">
+            <div><PackageCheck size={20} /><span>Cost data coverage</span><strong>{costCoveragePct.toFixed(0)}%</strong></div>
+            <Slider value={costCoveragePct} />
+            <p>{costCoveragePct >= 95 ? 'Profit reporting has reliable cost coverage.' : 'Add product cost prices or purchases to improve profit accuracy.'}</p>
           </div>
         </div>
-        <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-          {costCoveragePct >= 95
-            ? "Profit trend is using cost data from product/purchase history."
-            : costCoveragePct > 0
-            ? `Profit trend currently uses cost data for ${costCoveragePct.toFixed(0)}% of today's line items. Add cost price or purchase entries to improve accuracy.`
-            : "Profit trend has no cost coverage yet. Add cost price in products or create purchases to make Profit % meaningful."}
-        </div>
-      </div>
+      </section>
 
-      {/* Top Products */}
-      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0 }}>Top Products ({fromISO} → {toISO})</h3>
-          <div className="muted" style={{ fontSize: 12 }}>
-            ranking by {rankMode === 'qty' ? 'quantity' : 'amount'}
+      <div className="dashboard-insights-grid">
+        <section className="card dashboard-products-card">
+          <div className="dashboard-card-heading"><div><span className="dashboard-kicker">Product momentum</span><h3>Top products</h3></div><span>By {rankMode === 'qty' ? 'quantity' : 'amount'}</span></div>
+          {top3.length === 0 ? <div className="dashboard-empty"><PackageCheck size={26} /><strong>No sales in this period</strong><span>Product rankings will appear after invoices are created.</span></div> : (
+            <div className="dashboard-product-list">{top3.map((r) => <TopRow key={r.name} row={r} />)}</div>
+          )}
+        </section>
+
+        <section className="card dashboard-range-card">
+          <div className="dashboard-card-heading"><div><span className="dashboard-kicker">Period summary</span><h3>Range totals</h3></div></div>
+          <div className="dashboard-mini-grid">
+            <MiniKPI label="Total sales" value={`₹${fmtINRCompact(totalRange)}`} />
+            <MiniKPI label="Average / day" value={fmtINR(avgPerDay)} />
+            <MiniKPI label="Best day" value={bestLabel} />
+            <MiniKPI label="Active days" value={`${activeDays} of ${values.length || 0}`} />
           </div>
-        </div>
-        {top3.length === 0 ? (
-          <div className="muted" style={{ paddingTop: 8 }}>No sales in this period.</div>
-        ) : (
-          <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>
-            {top3.map((r) => <TopRow key={r.name} row={r} />)}
-          </div>
-        )}
+        </section>
       </div>
 
       {/* Charts */}
-      <div className="card" style={{ padding: 16 }}>
-        <h3 style={{ margin: 0, marginBottom: 8 }}>Daily Totals ({fromISO} → {toISO})</h3>
-
-        {/* Range KPIs above the line */}
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-          <MiniKPI label="Total in range" value={`₹${fmtINRCompact(totalRange)}`} />
-          <MiniKPI label="Avg / day" value={fmtINR(avgPerDay)} />
-          <MiniKPI label="Best day" value={bestLabel} />
-          <MiniKPI label="Active days" value={`${activeDays}/${values.length || 0}`} />
-        </div>
-
-        <div style={{ width: '100%', height: 340 }}>
+      <section className="card dashboard-chart-card">
+        <div className="dashboard-card-heading"><div><span className="dashboard-kicker">Sales movement</span><h3>Daily sales trend</h3></div><span>{fromISO} → {toISO}</span></div>
+        <div className="dashboard-chart">
           <ResponsiveContainer>
             <ComposedChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={theme.border} />
@@ -300,28 +284,25 @@ export default function DashboardPage() {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        <div style={{ marginTop: 8, color: 'var(--muted)' }}>
-          Bars: daily sales amount • Line: 7‑day moving average
-        </div>
-      </div>
+        <div className="dashboard-chart-note">Bars show daily sales. The line shows the seven-day moving average.</div>
+      </section>
     </div>
   );
 }
 
 /* ---------- helpers & small UI ---------- */
-function KPI({ label, value }: { label: string; value: string }) {
+function KPI({ label, value, icon: Icon, tone }: { label: string; value: string; icon: typeof IndianRupee; tone: string }) {
   return (
-    <div className="glass" style={{ padding: 12, borderRadius: 12, minWidth: 180, display: 'grid', gap: 4 }}>
-      <div style={{ color: 'var(--muted)', fontSize: 12 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800 }}>{value}</div>
+    <div className={`card dashboard-kpi tone-${tone}`}>
+      <span className="dashboard-kpi-icon"><Icon size={20} /></span>
+      <div><span>{label}</span><strong>{value}</strong></div>
     </div>
   );
 }
 function MiniKPI({ label, value }: { label: string; value: string }) {
   return (
-    <div className="glass" style={{ padding: 10, borderRadius: 12, minWidth: 180 }}>
-      <div style={{ color: 'var(--muted)', fontSize: 11 }}>{label}</div>
-      <div style={{ fontWeight: 700 }}>{value}</div>
+    <div className="dashboard-mini-kpi">
+      <span>{label}</span><strong>{value}</strong>
     </div>
   );
 }

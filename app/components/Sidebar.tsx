@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { Boxes, FileText, Gauge, PackageSearch, ReceiptText, Settings2, ShoppingCart, TrendingUp, Warehouse } from 'lucide-react';
+import { Boxes, FileClock, FileText, Gauge, PackageSearch, ReceiptText, Settings2, ShieldCheck, ShoppingCart, TrendingUp, Users, Warehouse } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 type SidebarProps = { open?: boolean; onClose?: () => void; collapsed?: boolean };
@@ -38,9 +38,16 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   profile: Settings2,
 };
 
+const ADMIN_NAV = [
+  { key: 'settings', href: '/profile/settings', label: 'Business Settings', icon: Settings2, permissions: ['perm.settings.manage'] },
+  { key: 'users', href: '/profile/users', label: 'Users & Roles', icon: Users, permissions: ['perm.users.manage', 'perm.users.approve', 'perm.roles.manage'] },
+  { key: 'audit', href: '/profile/logs', label: 'Audit Logs', icon: FileClock, permissions: ['perm.audit.view', 'perm.audit.export'] },
+];
+
 export default function Sidebar({ open = false, onClose, collapsed = false }: SidebarProps) {
   const pathname = usePathname();
   const [nav, setNav] = useState<NavItem[]>(FALLBACK_NAV);
+  const [adminNav, setAdminNav] = useState<typeof ADMIN_NAV>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -71,6 +78,21 @@ export default function Sidebar({ open = false, onClose, collapsed = false }: Si
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/profile/access', { cache: 'no-store' })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!active || !data) return;
+        const permissions = new Set(Array.isArray(data.permissions) ? data.permissions.map(String) : []);
+        const roles = new Set(Array.isArray(data.roles) ? data.roles.map((role: unknown) => String(role).toLowerCase()) : []);
+        const elevated = roles.has('owner') || roles.has('admin') || roles.has('platform_admin');
+        setAdminNav(ADMIN_NAV.filter((item) => elevated || item.permissions.some((permission) => permissions.has(permission))));
+      })
+      .catch(() => setAdminNav([]));
+    return () => { active = false; };
   }, []);
 
   const Nav = (
@@ -109,6 +131,28 @@ export default function Sidebar({ open = false, onClose, collapsed = false }: Si
           </Link>
         );
       })}
+      {adminNav.length > 0 && (
+        <div className="app-sidebar-admin">
+          {!collapsed && <div className="app-sidebar-section-label"><ShieldCheck size={13} /> Administration</div>}
+          {adminNav.map((item) => {
+            const active = pathname === item.href || pathname.startsWith(item.href + '/');
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                title={item.label}
+                className={`app-sidebar-link app-sidebar-admin-link ${collapsed ? 'justify-center' : ''}`}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span className="app-sidebar-icon" aria-hidden><Icon size={18} strokeWidth={1.8} /></span>
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </nav>
   );
 
