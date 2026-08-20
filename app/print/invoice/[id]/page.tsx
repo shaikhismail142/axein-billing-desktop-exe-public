@@ -36,7 +36,7 @@ export default async function InvoicePrintPickerPage({ params }: { params: { id:
       subtitle={`Date: ${fmtDate(displayDate)}`}
       backHref={`/invoices/${id}`}
       backLabel="Back to Invoice"
-      a4IframeSrc={`/invoices/${id}/print?embed=1`}
+      a4IframeSrc={`/api/invoices/${id}/pdf`}
       thermalIframeSrc={`/print/invoice/${id}/thermal?embed=1`}
       pdfDownloadSrc={`/api/invoices/${id}/pdf`}
       pdfFallbackName={`invoice-${inv.invoice_no || inv.id}.pdf`}
