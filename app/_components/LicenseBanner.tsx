@@ -14,6 +14,7 @@ type Status = {
 
 export default function LicenseBanner() {
   const [st, setSt] = useState<Status | null>(null);
+  const [hostedPortal, setHostedPortal] = useState<boolean | null>(null);
 
   async function refresh() {
     try {
@@ -25,9 +26,14 @@ export default function LicenseBanner() {
     }
   }
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    const hosted = window.location.hostname === 'billing.axein.in';
+    setHostedPortal(hosted);
+    if (!hosted) void refresh();
+  }, []);
 
-  if (!st || st.isLicensed) return null;
+  // Hosted tenants use plan entitlements, not desktop trial/license activation.
+  if (hostedPortal !== false || !st || st.isLicensed) return null;
 
   const Wrap: React.FC<{ tone: 'amber'|'sky'|'rose'; children: React.ReactNode }> = ({ tone, children }) => {
     const toneMap = {

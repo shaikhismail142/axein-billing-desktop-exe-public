@@ -50,6 +50,10 @@ const loginPage = read("app/login/page.tsx");
 assert.match(loginPage, /window\.location\.hostname === "billing\.axein\.in"/);
 assert.match(loginPage, /Return to Defenzo/);
 
+const licenseBanner = read("app/_components/LicenseBanner.tsx");
+assert.match(licenseBanner, /window\.location\.hostname === 'billing\.axein\.in'/);
+assert.match(licenseBanner, /if \(hostedPortal !== false/);
+
 const controlPlane = read("app/lib/control-plane-auth.ts");
 for (const binding of ["method.toUpperCase()", "input.path", "input.timestamp", "input.nonce", "bodyDigest(input.rawBody)"]) {
   assert.ok(controlPlane.includes(binding), `control-plane signature must bind ${binding}`);
