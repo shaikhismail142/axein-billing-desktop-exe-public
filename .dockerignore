@@ -1,0 +1,12 @@
+.git
+.github
+.next
+node_modules
+.env*
+desktop/release
+desktop/runtime
+desktop/src-tauri/target
+docs/handbook
+tools/handbook
+*.log
+.DS_Store

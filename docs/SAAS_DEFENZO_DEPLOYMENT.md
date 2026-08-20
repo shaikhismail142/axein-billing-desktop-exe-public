@@ -12,6 +12,8 @@ Never expose the app with desktop deployment mode on a public host.
    `billing.axein.in`.
 2. Copy `.env.saas.example` to `.env.saas` outside source control and replace every
    placeholder with generated secrets.
+   Use the same `AXEIN_CONTROL_PLANE_SECRET` in the protected Django service
+   environment; it is never stored in a tenant or integration database row.
 3. Start PostgreSQL, apply migrations, then start the application:
 
 ```bash

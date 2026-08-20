@@ -3,14 +3,14 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { requirePlatformAdmin } from "@/app/lib/platform-admin";
+import { authorizePlatformRequest } from "@/app/lib/control-plane-auth";
 import { resolveBusinessTemplate, resolveTemplateNavigationItems } from "@/app/lib/business-templates";
 
 const ALL_MODULES = ["dashboard", "billing", "invoices", "quotations", "products", "inventory", "purchases", "accounting", "reports", "audit"];
 
 export async function GET(req: Request) {
-  const admin = await requirePlatformAdmin(req);
-  if (!admin.ok) return admin.response;
+  const admin = await authorizePlatformRequest(req);
+  if ("response" in admin) return admin.response;
   const rs = await pool.query(
     `SELECT b.id,b.code,b.name,b.legal_name,b.business_type,b.tenant_status,b.branding_json,
             e.plan_code,e.status AS plan_status,e.starts_at,e.ends_at,e.user_limit,e.modules,
@@ -23,9 +23,10 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const admin = await requirePlatformAdmin(req);
-  if (!admin.ok) return admin.response;
-  const body = await req.json().catch(() => ({} as any));
+  const rawBody = await req.text();
+  const admin = await authorizePlatformRequest(req, rawBody);
+  if ("response" in admin) return admin.response;
+  const body = (() => { try { return JSON.parse(rawBody || "{}"); } catch { return {}; } })() as any;
   const code = String(body.code || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
   const name = String(body.name || "").trim();
   if (!code || !name) return NextResponse.json({ error: "code_and_name_required" }, { status: 400 });
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
     await db.query(
       `INSERT INTO audit_logs (business_id,actor_user_id,action,entity_type,entity_id,meta_json)
        VALUES ($1,$2,'platform.tenant.create','business',$3,$4::jsonb)`,
-      [businessId,admin.session.user_id,String(businessId),JSON.stringify({ code,plan_code:body.plan_code || "defenzo-free-year" })]
+      [businessId,admin.actorUserId,String(businessId),JSON.stringify({ code,plan_code:body.plan_code || "defenzo-free-year", actor:admin.actorLabel })]
     );
     await db.query("COMMIT");
     return NextResponse.json({ ok:true,business_id:businessId }, { status:201 });
@@ -84,9 +85,10 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const admin = await requirePlatformAdmin(req);
-  if (!admin.ok) return admin.response;
-  const body = await req.json().catch(() => ({} as any));
+  const rawBody = await req.text();
+  const admin = await authorizePlatformRequest(req, rawBody);
+  if ("response" in admin) return admin.response;
+  const body = (() => { try { return JSON.parse(rawBody || "{}"); } catch { return {}; } })() as any;
   const businessId = Number(body.business_id || 0);
   if (businessId <= 0) return NextResponse.json({ error:"business_id_required" }, { status:400 });
   const db = await pool.connect();
@@ -116,7 +118,7 @@ export async function PATCH(req: Request) {
     await db.query(
       `INSERT INTO audit_logs (business_id,actor_user_id,action,entity_type,entity_id,meta_json)
        VALUES ($1,$2,'platform.tenant.update','business',$3,$4::jsonb)`,
-      [businessId,admin.session.user_id,String(businessId),JSON.stringify({ before:old,after:body })]
+      [businessId,admin.actorUserId,String(businessId),JSON.stringify({ before:old,after:body,actor:admin.actorLabel })]
     );
     await db.query("COMMIT");
     return NextResponse.json({ ok:true });

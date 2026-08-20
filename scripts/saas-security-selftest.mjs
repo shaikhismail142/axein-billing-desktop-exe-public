@@ -36,6 +36,17 @@ assert.match(logos, /tenants\/\$\{businessId\}\/logos/);
 
 const tenants = read("app/api/platform/tenants/route.ts");
 assert.match(tenants, /source: "tenant_provision"/);
+assert.match(tenants, /authorizePlatformRequest/);
+
+const controlPlane = read("app/lib/control-plane-auth.ts");
+for (const binding of ["method.toUpperCase()", "input.path", "input.timestamp", "input.nonce", "bodyDigest(input.rawBody)"]) {
+  assert.ok(controlPlane.includes(binding), `control-plane signature must bind ${binding}`);
+}
+assert.match(controlPlane, /control_plane_nonces/);
+assert.match(controlPlane, /timingSafeEqual/);
+
+const controlMigration = read("db/migrations/20260820c_control_plane_auth.sql");
+assert.match(controlMigration, /CREATE TABLE IF NOT EXISTS control_plane_nonces/);
 
 const template = read("app/lib/business-templates.ts");
 for (const field of ["vehicle_registration", "vin_chassis", "job_card_number", "service_category", "reported_concerns", "customer_approval"]) {

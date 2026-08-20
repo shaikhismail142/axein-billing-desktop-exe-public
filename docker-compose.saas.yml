@@ -26,6 +26,8 @@ services:
       AXEIN_DEPLOYMENT_MODE: saas
       DATABASE_URL: postgresql://${POSTGRES_USER:-axein}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-axein}
       AXEIN_SESSION_SECRET: ${AXEIN_SESSION_SECRET:?set AXEIN_SESSION_SECRET}
+      AXEIN_CONTROL_PLANE_CLIENT: ${AXEIN_CONTROL_PLANE_CLIENT:-axein-control-room}
+      AXEIN_CONTROL_PLANE_SECRET: ${AXEIN_CONTROL_PLANE_SECRET:?set AXEIN_CONTROL_PLANE_SECRET}
       AXEIN_INTEGRATION_SECRET_DEFENZO: ${AXEIN_INTEGRATION_SECRET_DEFENZO:-}
       APP_ACTIVATION_REQUIRED: "false"
       AXEIN_PUBLIC_URL: https://billing.axein.in
@@ -35,7 +37,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_REGION: ${S3_REGION:-auto}
       S3_PATH_STYLE: ${S3_PATH_STYLE:-0}
-    ports: ["127.0.0.1:3199:3000"]
+    ports: ["127.0.0.1:3200:3000"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)})"]
       interval: 15s
