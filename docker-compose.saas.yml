@@ -24,6 +24,7 @@ services:
       db: { condition: service_healthy }
     environment:
       AXEIN_DEPLOYMENT_MODE: saas
+      HOSTNAME: 0.0.0.0
       DATABASE_URL: postgresql://${POSTGRES_USER:-axein}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-axein}
       AXEIN_SESSION_SECRET: ${AXEIN_SESSION_SECRET:?set AXEIN_SESSION_SECRET}
       AXEIN_CONTROL_PLANE_CLIENT: ${AXEIN_CONTROL_PLANE_CLIENT:-axein-control-room}
