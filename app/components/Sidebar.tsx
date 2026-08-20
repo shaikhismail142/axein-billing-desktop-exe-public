@@ -14,18 +14,6 @@ type NavItem = {
   label: string;
 };
 
-const FALLBACK_NAV: NavItem[] = [
-  { key: 'dashboard', href: '/dashboard', label: 'Dashboard & Reports' },
-  { key: 'billing', href: '/billing', label: 'Quick Billing' },
-  { key: 'invoices', href: '/invoices', label: 'Invoices' },
-  { key: 'quotations', href: '/quotations', label: 'Quotations' },
-  { key: 'products', href: '/products', label: 'Products' },
-  { key: 'inventory', href: '/inventory/low-stock', label: 'Low Stock' },
-  { key: 'purchases', href: '/inventory/purchases', label: 'Purchases' },
-  { key: 'accounting', href: '/accounting', label: 'Accounting' },
-  { key: 'profile', href: '/profile', label: 'Profile' },
-];
-
 const NAV_ICONS: Record<string, LucideIcon> = {
   dashboard: Gauge,
   billing: ReceiptText,
@@ -46,7 +34,7 @@ const ADMIN_NAV = [
 
 export default function Sidebar({ open = false, onClose, collapsed = false }: SidebarProps) {
   const pathname = usePathname();
-  const [nav, setNav] = useState<NavItem[]>(FALLBACK_NAV);
+  const [nav, setNav] = useState<NavItem[]>([]);
   const [adminNav, setAdminNav] = useState<typeof ADMIN_NAV>([]);
 
   useEffect(() => {
@@ -70,9 +58,9 @@ export default function Sidebar({ open = false, onClose, collapsed = false }: Si
             label: String(item?.label || "").trim(),
           }))
           .filter((item: NavItem) => item.key && item.href && item.label);
-        if (active && items.length > 0) setNav(items);
+        if (active) setNav(items);
       } catch {
-        // Keep fallback navigation when profile API is unavailable.
+        // Never display unverified module links for restricted users.
       }
     })();
     return () => {
