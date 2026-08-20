@@ -4,6 +4,8 @@ import { canViewBusinessRevenue, getUserPermissionCodes, getUserRoles } from "@/
 import { authenticateLanClient } from "@/app/lib/lan-auth";
 import { readSessionFromRequest } from "@/app/lib/session";
 import { pool } from "@/lib/db";
+import { isSaasDeployment } from "@/app/lib/deployment";
+import { enforceTenantModuleAccess, enforceTenantWriteAccess } from "@/app/lib/tenant-entitlements";
 
 export type AccessContext = {
   businessId: number;
@@ -40,6 +42,7 @@ async function bestEffortAuditDenied(
 }
 
 function isAdminBypass(req: Request): boolean {
+  if (isSaasDeployment()) return false;
   if (process.env.DISABLE_ADMIN_CHECK === "1") return true;
   if (process.env.AXEIN_ALLOW_ADMIN_HEADER !== "1") return false;
 
@@ -94,7 +97,7 @@ async function resolveImplicitUserId(businessId: number, fallback = 1): Promise<
 }
 
 export async function resolveAccessContext(req: Request): Promise<AccessContext> {
-  const lanAuth = await authenticateLanClient(req);
+  const lanAuth = isSaasDeployment() ? { ok: false as const } : await authenticateLanClient(req);
   if (lanAuth.ok) {
     return {
       businessId: lanAuth.businessId,
@@ -137,6 +140,10 @@ export async function resolveAccessContext(req: Request): Promise<AccessContext>
       permissions,
       revenueVisible: canViewBusinessRevenue(roles, permissions),
     };
+  }
+
+  if (isSaasDeployment()) {
+    return { businessId: 0, userId: 0, permissions: [], revenueVisible: false };
   }
 
   const requestedBusinessId = getRequestBusinessId(req, 0);
@@ -186,6 +193,10 @@ export async function requireRevenueAccess(req: Request): Promise<
   }
 
   const ctx = await resolveAccessContext(req);
+  if (isSaasDeployment()) {
+    const moduleBlocked = await enforceTenantModuleAccess(ctx.businessId, ["perm.reports.view"]);
+    if (moduleBlocked) return { ok: false, response: moduleBlocked };
+  }
   const hasReports = ctx.permissions.includes("perm.reports.view");
 
   if (!hasReports || !ctx.revenueVisible) {
@@ -209,6 +220,9 @@ export async function requireAnyPermission(
 ): Promise<{ ok: true; ctx: AccessContext } | { ok: false; response: NextResponse }> {
   if (!Array.isArray(permissionCodes) || permissionCodes.length === 0) {
     const ctx = await resolveAccessContext(req);
+    if (ctx.businessId <= 0 || ctx.userId <= 0) {
+      return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+    }
     return { ok: true, ctx };
   }
 
@@ -223,11 +237,29 @@ export async function requireAnyPermission(
   }
 
   const ctx = await resolveAccessContext(req);
+  if (isSaasDeployment()) {
+    const moduleBlocked = await enforceTenantModuleAccess(ctx.businessId, permissionCodes);
+    if (moduleBlocked) return { ok: false, response: moduleBlocked };
+  }
+  if (isSaasDeployment() && !["GET", "HEAD", "OPTIONS"].includes(req.method.toUpperCase())) {
+    const blocked = await enforceTenantWriteAccess(ctx.businessId);
+    if (blocked) return { ok: false, response: blocked };
+  }
   if (!permissionCodes.some((code) => ctx.permissions.includes(code))) {
     await bestEffortAuditDenied(ctx, req, permissionCodes, "missing_any_permission");
     return { ok: false, response: NextResponse.json({ error: errorMessage }, { status: 403 }) };
   }
 
+  return { ok: true, ctx };
+}
+
+export async function requireAuthenticated(req: Request): Promise<
+  { ok: true; ctx: AccessContext } | { ok: false; response: NextResponse }
+> {
+  const ctx = await resolveAccessContext(req);
+  if (ctx.businessId <= 0 || ctx.userId <= 0) {
+    return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  }
   return { ok: true, ctx };
 }
 
@@ -238,6 +270,9 @@ export async function requireAllPermissions(
 ): Promise<{ ok: true; ctx: AccessContext } | { ok: false; response: NextResponse }> {
   if (!Array.isArray(permissionCodes) || permissionCodes.length === 0) {
     const ctx = await resolveAccessContext(req);
+    if (ctx.businessId <= 0 || ctx.userId <= 0) {
+      return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+    }
     return { ok: true, ctx };
   }
 
@@ -252,6 +287,14 @@ export async function requireAllPermissions(
   }
 
   const ctx = await resolveAccessContext(req);
+  if (isSaasDeployment()) {
+    const moduleBlocked = await enforceTenantModuleAccess(ctx.businessId, permissionCodes);
+    if (moduleBlocked) return { ok: false, response: moduleBlocked };
+  }
+  if (isSaasDeployment() && !["GET", "HEAD", "OPTIONS"].includes(req.method.toUpperCase())) {
+    const blocked = await enforceTenantWriteAccess(ctx.businessId);
+    if (blocked) return { ok: false, response: blocked };
+  }
   if (!permissionCodes.every((code) => ctx.permissions.includes(code))) {
     await bestEffortAuditDenied(ctx, req, permissionCodes, "missing_all_permissions");
     return { ok: false, response: NextResponse.json({ error: errorMessage }, { status: 403 }) };

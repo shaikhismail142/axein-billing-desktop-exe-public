@@ -720,6 +720,45 @@ export async function POST(req: Request) {
       );
     }
 
+    const customerSnapshot = customer_id
+      ? await client.query(
+          `SELECT id, name, phone, email, gstin, address
+             FROM customers
+            WHERE id = $1${hasCustomersBusiness ? " AND business_id = $2" : ""}
+            LIMIT 1`,
+          hasCustomersBusiness ? [customer_id, businessId] : [customer_id]
+        )
+      : null;
+    await client.query(
+      `INSERT INTO document_snapshots
+        (business_id, document_type, document_id, version, snapshot_json, created_by)
+       VALUES ($1, 'invoice', $2, 1, $3::jsonb, $4)`,
+      [
+        businessId,
+        String(sale_id),
+        JSON.stringify({
+          invoice_no,
+          dc_no,
+          invoice_date: invoiceDateParam.toISOString(),
+          business: biz,
+          customer: customerSnapshot?.rows?.[0] || {
+            name: nstr(payload.customer_name),
+            phone: nstr(payload.customer_phone),
+            gstin: nstr(payload.customer_gstin),
+            address: nstr(payload.customer_address),
+          },
+          lines,
+          totals: { subtotal, discount_total, tax_total, extra_amount, extra_tax_amount, grand_total, paid, pending_amount },
+          payment: { status: payment_status, method: payment_method },
+          custom_fields: customFields,
+          custom_field_totals: payload.custom_field_totals || null,
+          notes,
+          terms,
+        }),
+        access.ctx.userId > 0 ? access.ctx.userId : null,
+      ]
+    );
+
     await client.query("COMMIT");
 
     // Optional: record a payment row AFTER commit to avoid aborting the main tx

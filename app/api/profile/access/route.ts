@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { getRequestBusinessId, getRequestUserId } from "@/app/lib/platform-context";
+import { requireAuthenticated } from "@/app/lib/request-access";
 import {
   canViewBusinessRevenue,
   getUserPermissionCodes,
@@ -11,8 +11,10 @@ import {
 
 export async function GET(req: Request) {
   try {
-    const businessId = getRequestBusinessId(req, 1);
-    const userId = getRequestUserId(req, 1);
+    const access = await requireAuthenticated(req);
+    if ("response" in access) return access.response;
+    const businessId = access.ctx.businessId;
+    const userId = access.ctx.userId;
 
     const [roles, permissions] = await Promise.all([
       getUserRoles(userId, businessId),

@@ -8,6 +8,7 @@ const NO_STORE_HEADERS = {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const saasMode = process.env.AXEIN_DEPLOYMENT_MODE === "saas";
   const keygenMode =
     process.env.AXEIN_APP_MODE === "keygen" || process.env.AXEIN_INCLUDE_KEYGEN_UI === "1";
 
@@ -26,8 +27,48 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  if (saasMode && pathname.startsWith("/api/")) {
+    const desktopApiPrefixes = [
+      "/api/activation", "/api/license", "/api/lan", "/api/staff/keygen",
+      "/api/onboarding", "/api/users/signup", "/api/admin/backup", "/api/admin/restore",
+    ];
+    if (desktopApiPrefixes.some((prefix) => pathname.startsWith(prefix))) {
+      return NextResponse.json({ error: "not_available_in_saas" }, { status: 404 });
+    }
+    return NextResponse.next();
+  }
+
   if (pathname.startsWith("/api/")) {
     return NextResponse.next();
+  }
+
+  if (saasMode) {
+    const desktopOnly = ["/activate", "/license", "/register-business", "/signup", "/staff/keygen", "/profile/network"];
+    if (desktopOnly.some((prefix) => pathname.startsWith(prefix))) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    if (pathname.startsWith("/login")) return NextResponse.next();
+
+    const authURL = req.nextUrl.clone();
+    authURL.pathname = "/api/auth/session";
+    authURL.search = "";
+    try {
+      const authRes = await fetch(authURL, {
+        cache: "no-store",
+        headers: { ...NO_STORE_HEADERS, cookie: req.headers.get("cookie") || "" } as any,
+      });
+      const auth = authRes.ok ? await authRes.json().catch(() => ({})) : {};
+      if (auth?.authenticated) return NextResponse.next();
+    } catch {
+      // Hosted mode fails closed when session validation is unavailable.
+    }
+    const loginURL = req.nextUrl.clone();
+    loginURL.pathname = "/login";
+    loginURL.searchParams.set("next", pathname);
+    return NextResponse.redirect(loginURL);
   }
 
   // These legacy onboarding routes should not be accessible from the customer app UI.

@@ -105,7 +105,7 @@ export async function POST(req: Request) {
         `INSERT INTO invoice_custom_fields
           (business_id, field_key, label, data_type, required, visible, position, applies_to, preset_scope, config_json)
          VALUES
-          ($1, $2, $3, $4, $5, $6, $7, 'invoice', $8, $9::jsonb)
+          ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
          ON CONFLICT (business_id, field_key)
          DO UPDATE SET
             label = EXCLUDED.label,
@@ -124,8 +124,12 @@ export async function POST(req: Request) {
           field.required,
           field.visible,
           idx + 1,
+          field.applies_to || "invoice",
           template.key,
-          JSON.stringify({ source: reset ? "template_reset" : "template_apply" }),
+          JSON.stringify({
+            source: reset ? "template_reset" : "template_apply",
+            ...(field.options ? { options: field.options.map((value) => ({ label: value, value })) } : {}),
+          }),
         ]
       );
     }
@@ -165,4 +169,3 @@ export async function POST(req: Request) {
     client.release();
   }
 }
-

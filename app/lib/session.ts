@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isSaasDeployment } from "@/app/lib/deployment";
 
 export const SESSION_COOKIE_NAME = "axein_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -15,11 +16,15 @@ export type SessionClaims = {
 };
 
 function getSessionSecret() {
-  return (
+  const secret = (
     process.env.AXEIN_SESSION_SECRET ||
     process.env.NEXTAUTH_SECRET ||
     DEFAULT_SESSION_SECRET
   );
+  if (isSaasDeployment() && secret === DEFAULT_SESSION_SECRET) {
+    throw new Error("AXEIN_SESSION_SECRET is required in SaaS mode");
+  }
+  return secret;
 }
 
 function toBase64Url(input: Buffer | string) {
@@ -104,9 +109,11 @@ export function readSessionFromRequest(req: Request) {
 
 export function makeSessionCookie(token: string) {
   // Session cookie: requires login again after app/browser closes.
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`;
+  const secure = isSaasDeployment() ? "; Secure" : "";
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure}`;
 }
 
 export function makeClearedSessionCookie() {
-  return `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
+  const secure = isSaasDeployment() ? "; Secure" : "";
+  return `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
 }

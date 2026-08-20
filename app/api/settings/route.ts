@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/app/lib/db";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import { isSaasDeployment } from "@/app/lib/deployment";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ async function readSetting(client: any, key: string, businessId: number, hasBusi
     hasBusiness ? [key, businessId] : [key]
   );
 
-  if (!rs.rowCount && hasBusiness) {
+  if (!rs.rowCount && hasBusiness && !isSaasDeployment()) {
     rs = await client.query(
       `SELECT value_json
          FROM settings
@@ -57,14 +58,6 @@ async function writeSetting(
       [valueJson, key, businessId]
     );
     if (scoped.rowCount) return;
-
-    const fallback = await client.query(
-      `UPDATE settings
-          SET value_json = $1::jsonb
-        WHERE key = $2`,
-      [valueJson, key]
-    );
-    if (fallback.rowCount) return;
 
     await client.query(
       `INSERT INTO settings(key, business_id, value_json)
@@ -158,8 +151,32 @@ export async function PUT(req: Request) {
     const settingsCols = await getSettingsColumns(pool).catch(() => new Set<string>());
     const hasBusiness = settingsCols.has("business_id");
 
-    await writeSetting(pool, "business", data, businessId, hasBusiness);
-    await syncLegacyBusinessValue(pool, data, businessId, hasBusiness);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const before = await readSetting(client, "business", businessId, hasBusiness);
+      await writeSetting(client, "business", data, businessId, hasBusiness);
+      await syncLegacyBusinessValue(client, data, businessId, hasBusiness);
+      const displayName = String(data.name || "").trim();
+      const legalName = String(data.legal_name || "").trim();
+      if (displayName) {
+        await client.query(
+          `UPDATE businesses SET name=$2, legal_name=COALESCE(NULLIF($3,''),legal_name), updated_at=NOW() WHERE id=$1`,
+          [businessId, displayName, legalName]
+        );
+      }
+      await client.query(
+        `INSERT INTO audit_logs (business_id,actor_user_id,action,entity_type,entity_id,meta_json)
+         VALUES ($1,$2,'settings.business.update','business',$3,$4::jsonb)`,
+        [businessId, access.ctx.userId || null, String(businessId), JSON.stringify({ before, after: data })]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

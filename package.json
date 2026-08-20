@@ -6,6 +6,8 @@
     "dev": "node ./node_modules/next/dist/bin/next dev -p 3000",
     "build": "node ./node_modules/next/dist/bin/next build",
     "start": "node ./node_modules/next/dist/bin/next start -p 3000",
+    "saas:build": "AXEIN_DEPLOYMENT_MODE=saas node ./node_modules/next/dist/bin/next build",
+    "saas:selftest": "node ./scripts/saas-security-selftest.mjs",
     "lint": "node ./node_modules/next/dist/bin/next lint",
     "desktop:preflight": "node ./desktop/scripts/desktop-preflight.mjs",
     "desktop:web:dev": "node ./desktop/scripts/run-next-dev.mjs",

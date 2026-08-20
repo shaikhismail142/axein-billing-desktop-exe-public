@@ -8,6 +8,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import { isSaasDeployment } from "@/app/lib/deployment";
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp"]);
 const EXT_FROM_MIME: Record<string, string> = {
@@ -31,6 +33,25 @@ function makeFilename(ext: string) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const short = crypto.randomUUID().slice(0, 8);
   return `logo_${stamp}_${short}.${ext}`;
+}
+
+function objectStore() {
+  const endpoint = String(process.env.S3_ENDPOINT || "").trim();
+  const bucket = String(process.env.S3_BUCKET || "").trim();
+  const accessKeyId = String(process.env.S3_ACCESS_KEY_ID || "").trim();
+  const secretAccessKey = String(process.env.S3_SECRET_ACCESS_KEY || "").trim();
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
+    throw new Error("Private object storage is not configured");
+  }
+  return {
+    bucket,
+    client: new S3Client({
+      endpoint,
+      region: String(process.env.S3_REGION || "auto"),
+      forcePathStyle: process.env.S3_PATH_STYLE === "1",
+      credentials: { accessKeyId, secretAccessKey },
+    }),
+  };
 }
 
 export async function POST(req: Request) {
@@ -84,16 +105,20 @@ export async function POST(req: Request) {
     const byName = extFromName(file.name || "");
     const ext = (byMime || byName || "png").toLowerCase();
 
-    // Ensure upload dir exists
+    const filename = makeFilename(ext);
+    const u8 = new Uint8Array(ab);
+    if (isSaasDeployment()) {
+      const key = `tenants/${businessId}/logos/${filename}`;
+      const store = objectStore();
+      await store.client.send(new PutObjectCommand({ Bucket: store.bucket, Key: key, Body: u8, ContentType: mime }));
+      return NextResponse.json({ url: `/api/uploads/logo?key=${encodeURIComponent(key)}` }, { status: 200 });
+    }
+
+    // Desktop builds keep assets in their local runtime.
     const dir = path.join(process.cwd(), "public", "uploads", "logos", String(businessId));
     await mkdir(dir, { recursive: true });
 
-    // Generate unique filename & write
-    const filename = makeFilename(ext);
     const filepath = path.join(dir, filename);
-
-    // Use Uint8Array to satisfy Node's writeFile typing
-    const u8 = new Uint8Array(ab);
     await writeFile(filepath, u8);
 
     // Public URL (served by Next static from /public)
@@ -109,7 +134,24 @@ export async function POST(req: Request) {
   }
 }
 
-// (Optional) Reject other methods clearly
-export async function GET() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+export async function GET(req: Request) {
+  if (!isSaasDeployment()) return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+  const access = await requireAnyPermission(req, ["perm.settings.manage", "perm.sales.view", "perm.quotations.view"], "Forbidden");
+  if ("response" in access) return access.response;
+  const key = String(new URL(req.url).searchParams.get("key") || "");
+  const prefix = `tenants/${access.ctx.businessId}/logos/`;
+  if (!key.startsWith(prefix) || key.includes("..")) return NextResponse.json({ error: "invalid_asset_key" }, { status: 400 });
+  try {
+    const store = objectStore();
+    const object = await store.client.send(new GetObjectCommand({ Bucket: store.bucket, Key: key }));
+    if (!object.Body) return NextResponse.json({ error: "asset_not_found" }, { status: 404 });
+    const bytes = await object.Body.transformToByteArray();
+    const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return new NextResponse(body, {
+      headers: { "Content-Type": object.ContentType || "application/octet-stream", "Cache-Control": "private, max-age=300" },
+    });
+  } catch (error: any) {
+    console.error("Logo read failed:", error?.message || error);
+    return NextResponse.json({ error: "asset_unavailable" }, { status: 404 });
+  }
 }

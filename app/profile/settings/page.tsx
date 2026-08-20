@@ -12,9 +12,19 @@ const LicensePanel = dynamic(
 
 type Business = {
   name: string;
+  legal_name?: string;
   address: string;
   phone: string;
   gstin: string;
+  pan?: string;
+  email?: string;
+  website?: string;
+  currency?: string;
+  timezone?: string;
+  date_format?: string;
+  quotation_prefix?: string;
+  purchase_prefix?: string;
+  job_card_prefix?: string;
   invoice_prefix: string;
   state_code: string;
   signature_name: string;
@@ -33,9 +43,19 @@ type ColorTheme = "blue" | "green" | "amber" | "rose" | "purple" | "slate" | "or
 
 const DEFAULTS: Business = {
   name: '',
+  legal_name: '',
   address: '',
   phone: '',
   gstin: '',
+  pan: '',
+  email: '',
+  website: '',
+  currency: 'INR',
+  timezone: 'Asia/Kolkata',
+  date_format: 'DD/MM/YYYY',
+  quotation_prefix: 'QUO',
+  purchase_prefix: 'PUR',
+  job_card_prefix: 'JOB',
   invoice_prefix: 'INV',
   state_code: '27',
   signature_name: '',
@@ -540,14 +560,43 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <input className="input" placeholder="Business Name"
                  value={form.name} onChange={e => update('name', e.target.value)} />
+          <input className="input" placeholder="Legal Business Name"
+                 value={form.legal_name || ""} onChange={e => update('legal_name', e.target.value)} />
           <input className="input" placeholder="Phone"
                  value={form.phone} onChange={e => update('phone', e.target.value)} />
+          <input className="input" type="email" placeholder="Business Email"
+                 value={form.email || ""} onChange={e => update('email', e.target.value)} />
+          <input className="input" placeholder="Website"
+                 value={form.website || ""} onChange={e => update('website', e.target.value)} />
           <input className="input" placeholder="GSTIN"
                  value={form.gstin} onChange={e => update('gstin', e.target.value)} />
+          <input className="input" placeholder="PAN"
+                 value={form.pan || ""} onChange={e => update('pan', e.target.value)} />
           <input className="input" placeholder="Invoice Prefix (e.g., INV)"
                  value={form.invoice_prefix} onChange={e => update('invoice_prefix', e.target.value)} />
+          <input className="input" placeholder="Quotation Prefix (e.g., QUO)"
+                 value={form.quotation_prefix || ""} onChange={e => update('quotation_prefix', e.target.value)} />
+          <input className="input" placeholder="Purchase Prefix (e.g., PUR)"
+                 value={form.purchase_prefix || ""} onChange={e => update('purchase_prefix', e.target.value)} />
+          <input className="input" placeholder="Job Card Prefix (e.g., JOB)"
+                 value={form.job_card_prefix || ""} onChange={e => update('job_card_prefix', e.target.value)} />
           <input className="input" placeholder="State Code (e.g., 27)"
                  value={form.state_code} onChange={e => update('state_code', e.target.value)} />
+          <select className="input" value={form.currency || "INR"} onChange={e => update('currency', e.target.value)}>
+            <option value="INR">INR - Indian Rupee</option>
+            <option value="USD">USD - US Dollar</option>
+            <option value="AED">AED - UAE Dirham</option>
+          </select>
+          <select className="input" value={form.timezone || "Asia/Kolkata"} onChange={e => update('timezone', e.target.value)}>
+            <option value="Asia/Kolkata">Asia/Kolkata</option>
+            <option value="Asia/Dubai">Asia/Dubai</option>
+            <option value="UTC">UTC</option>
+          </select>
+          <select className="input" value={form.date_format || "DD/MM/YYYY"} onChange={e => update('date_format', e.target.value)}>
+            <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+            <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+            <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+          </select>
           <input className="input" placeholder="Signature Image URL"
                  value={form.signature_image_url} onChange={e => update('signature_image_url', e.target.value)} />
           <input className="input" placeholder="Signature Name"

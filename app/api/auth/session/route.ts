@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { readSessionFromRequest, makeClearedSessionCookie } from "@/app/lib/session";
 import { getUserPermissionCodes } from "@/app/lib/platform-rbac";
+import { getTenantEntitlement } from "@/app/lib/tenant-entitlements";
 
 export async function GET(req: Request) {
   const session = readSessionFromRequest(req);
@@ -48,6 +49,7 @@ export async function GET(req: Request) {
 
     const row = userRs.rows[0] as any;
     const permissionCodes = await getUserPermissionCodes(Number(row.id), Number(row.business_id)).catch(() => []);
+    const entitlement = await getTenantEntitlement(Number(row.business_id));
 
     return NextResponse.json(
       {
@@ -62,6 +64,7 @@ export async function GET(req: Request) {
           business_name: String(row.business_name || ""),
           role_codes: Array.isArray(session.role_codes) ? session.role_codes : [],
           permission_codes: permissionCodes,
+          entitlement,
         },
       },
       { headers: { "Cache-Control": "no-store" } }

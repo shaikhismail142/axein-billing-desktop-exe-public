@@ -1,0 +1,23 @@
+FROM node:20-bookworm-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM deps AS build
+COPY . .
+ENV AXEIN_DEPLOYMENT_MODE=saas NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM node:20-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production AXEIN_DEPLOYMENT_MODE=saas NEXT_TELEMETRY_DISABLED=1 PORT=3000
+RUN groupadd --system axein && useradd --system --gid axein --home /app axein
+COPY --from=build --chown=axein:axein /app/.next/standalone ./
+COPY --from=build --chown=axein:axein /app/.next/static ./.next/static
+COPY --from=build --chown=axein:axein /app/public ./public
+COPY --from=build --chown=axein:axein /app/db ./db
+COPY --from=build --chown=axein:axein /app/desktop/scripts/apply-migrations.mjs ./desktop/scripts/apply-migrations.mjs
+COPY --from=build --chown=axein:axein /app/node_modules/pg ./node_modules/pg
+USER axein
+EXPOSE 3000
+CMD ["node", "server.js"]

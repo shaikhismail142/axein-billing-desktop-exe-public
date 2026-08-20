@@ -10,7 +10,8 @@ export type BusinessType =
   | "bakery"
   | "hotel"
   | "restaurant"
-  | "school_institute";
+  | "school_institute"
+  | "automotive_detailing";
 
 export type TemplateField = {
   key: string;
@@ -18,6 +19,8 @@ export type TemplateField = {
   required: boolean;
   visible: boolean;
   data_type?: "text" | "number" | "date" | "dropdown" | "radio" | "price" | "tax_percent";
+  applies_to?: "invoice" | "quotation" | "purchase" | "product";
+  options?: string[];
 };
 
 export type TemplateNavKey =
@@ -122,6 +125,13 @@ const NAV_LABEL_OVERRIDES: Record<BusinessType, Partial<Record<TemplateNavKey, s
     billing: "Fee Billing",
     quotations: "Fee Estimates",
     accounting: "Fee Accounting",
+  },
+  automotive_detailing: {
+    billing: "Workshop Billing",
+    quotations: "Service Estimates",
+    products: "Parts & Services",
+    inventory: "Parts & Consumables",
+    purchases: "Parts Purchases",
   },
 };
 
@@ -276,6 +286,32 @@ export const BUSINESS_TEMPLATES: Record<BusinessType, BusinessTemplate> = {
       { key: "student_name", label: "Student Name", required: true, visible: true, data_type: "text" },
       { key: "class_section", label: "Class/Section", required: false, visible: true, data_type: "text" },
       { key: "roll_no", label: "Roll No", required: false, visible: true, data_type: "text" },
+    ],
+  },
+  automotive_detailing: {
+    key: "automotive_detailing",
+    label: "Garage / Detailing / Vehicle Modification",
+    invoiceLayout: "hybrid",
+    navigation: [...COMMON_NAV],
+    workflowHints: ["vehicle-first", "job-card", "parts-and-labour", "inspection", "warranty-aware"],
+    defaultInvoiceFields: [
+      { key: "vehicle_registration", label: "Vehicle Registration", required: true, visible: true, data_type: "text" },
+      { key: "vehicle_make_model", label: "Make / Model / Variant", required: false, visible: true, data_type: "text" },
+      { key: "vin_chassis", label: "VIN / Chassis Number", required: false, visible: true, data_type: "text" },
+      { key: "engine_number", label: "Engine Number", required: false, visible: false, data_type: "text" },
+      { key: "odometer", label: "Odometer (km)", required: false, visible: true, data_type: "number" },
+      { key: "job_card_number", label: "Job Card Number", required: false, visible: true, data_type: "text" },
+      { key: "service_category", label: "Service Category", required: true, visible: true, data_type: "dropdown", options: ["Detailing", "Repair", "Accessories", "Modification", "Inspection"] },
+      { key: "service_advisor", label: "Service Advisor", required: false, visible: true, data_type: "text" },
+      { key: "assigned_technician", label: "Assigned Technician", required: false, visible: true, data_type: "text" },
+      { key: "reported_concerns", label: "Reported Concerns", required: false, visible: true, data_type: "text" },
+      { key: "work_performed", label: "Work Performed", required: false, visible: true, data_type: "text" },
+      { key: "estimated_delivery", label: "Estimated Delivery", required: false, visible: true, data_type: "date" },
+      { key: "warranty_months", label: "Warranty (Months)", required: false, visible: true, data_type: "number" },
+      { key: "next_service_date", label: "Next Service Date", required: false, visible: true, data_type: "date" },
+      { key: "insurance_claim_ref", label: "Insurance / Claim Reference", required: false, visible: false, data_type: "text" },
+      { key: "bay_key_token", label: "Bay / Key Token", required: false, visible: false, data_type: "text" },
+      { key: "customer_approval", label: "Customer Approval", required: false, visible: true, data_type: "radio", options: ["Approved", "Pending", "Declined"] },
     ],
   },
 };

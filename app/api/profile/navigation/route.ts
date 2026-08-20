@@ -3,7 +3,8 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { getRequestBusinessId } from "@/app/lib/platform-context";
+import { requireAuthenticated } from "@/app/lib/request-access";
+import { getTenantEntitlement } from "@/app/lib/tenant-entitlements";
 import { resolveBusinessTemplate, resolveTemplateNavigationItems, type TemplateNavItem } from "@/app/lib/business-templates";
 
 function normalizeNavItems(items: unknown): TemplateNavItem[] {
@@ -26,7 +27,9 @@ function normalizeNavItems(items: unknown): TemplateNavItem[] {
 }
 
 export async function GET(req: Request) {
-  const businessId = getRequestBusinessId(req, 1);
+  const access = await requireAuthenticated(req);
+  if ("response" in access) return access.response;
+  const businessId = access.ctx.businessId;
 
   const [bizRs, policyRs] = await Promise.all([
     pool.query(
@@ -52,7 +55,11 @@ export async function GET(req: Request) {
 
   const policy = policyRs.rows?.[0]?.policy_json;
   const fromPolicy = normalizeNavItems((policy as any)?.navigation_items);
-  const items = fromPolicy.length > 0 ? fromPolicy : resolveTemplateNavigationItems(template.key);
+  const configuredItems = fromPolicy.length > 0 ? fromPolicy : resolveTemplateNavigationItems(template.key);
+  const entitlement = await getTenantEntitlement(businessId);
+  const items = entitlement.modules.includes("*")
+    ? configuredItems
+    : configuredItems.filter((item) => entitlement.modules.includes(item.key));
 
   return NextResponse.json({
     business_id: businessId,
@@ -63,5 +70,6 @@ export async function GET(req: Request) {
     workflow_hints: (policy as any)?.workflow_hints || template.workflowHints,
     invoice_layout: (policy as any)?.invoice_layout || template.invoiceLayout,
     items,
+    entitlement,
   });
 }

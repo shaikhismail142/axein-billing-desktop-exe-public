@@ -8,6 +8,7 @@ import {
   createSessionToken,
   makeSessionCookie,
 } from "@/app/lib/session";
+import { isSaasDeployment } from "@/app/lib/deployment";
 
 type LoginBody = {
   email?: string;
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
          u.full_name,
          u.email,
          u.password_hash,
+         u.is_system_admin,
          lower(u.status) AS status,
          b.code AS business_code,
          b.name AS business_name
@@ -102,6 +104,16 @@ export async function POST(req: Request) {
     }
 
     const user = userRs.rows[0] as any;
+    if (isSaasDeployment() && !Boolean(user.is_system_admin)) {
+      await audit(Number(user.business_id), "auth.login.denied", "user", String(user.id), null, {
+        email,
+        reason: "sso_required",
+      });
+      return NextResponse.json(
+        { ok: false, error: "Use your connected business portal to sign in." },
+        { status: 403 }
+      );
+    }
     if (String(user.status || "").toLowerCase() !== "active") {
       await audit(Number(user.business_id), "auth.login.denied", "user", String(user.id), null, {
         email,
