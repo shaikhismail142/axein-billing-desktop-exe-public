@@ -2,6 +2,7 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { getActivationStatus } from '@/app/lib/license-activation';
+import { isSaasDeployment } from '@/app/lib/deployment';
 
 type ActiveStatus =
   | { mode: 'active' }
@@ -29,6 +30,11 @@ export async function guardApiActivated(allowTrial = true): Promise<
   | { ok: true; status: ActiveStatus }
   | { ok: false; response: NextResponse }
 > {
+  // Hosted tenants are authorized through their tenant entitlement. Desktop
+  // activation records do not exist in SaaS and must never gate SaaS routes.
+  if (isSaasDeployment()) {
+    return { ok: true, status: { mode: 'active' } };
+  }
   // Skip DB during build
   if (isBuildTime()) {
     if (allowTrial) {
@@ -59,6 +65,9 @@ export async function guardApiActivated(allowTrial = true): Promise<
  * - Else throws an Error (you can catch or redirect)
  */
 export async function ensureActivated(allowTrial = true): Promise<{ ok: true; status: ActiveStatus }> {
+  if (isSaasDeployment()) {
+    return { ok: true, status: { mode: 'active' } };
+  }
   // Skip DB during build
   if (isBuildTime()) {
     if (allowTrial) {

@@ -14,6 +14,9 @@ assert.match(access, /enforceTenantWriteAccess/);
 assert.match(access, /enforceTenantModuleAccess/);
 assert.ok((access.match(/ctx\.businessId <= 0 \|\| ctx\.userId <= 0/g) || []).length >= 4);
 
+const activationGuard = read("app/lib/activation-guard.ts");
+assert.ok((activationGuard.match(/if \(isSaasDeployment\(\)\)/g) || []).length >= 2);
+
 const session = read("app/lib/session.ts");
 assert.match(session, /AXEIN_SESSION_SECRET is required in SaaS mode/);
 assert.match(session, /; Secure/);
