@@ -48,11 +48,13 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     ? ` AND c.business_id = ${quoteBusinessRef || `$${headerParams.push(businessId)}`}`
     : "";
 
-  // Quotation + customer name/meta
+  // Customer details are stored as columns in the current schema. Returning
+  // the row as JSON preserves the legacy customer_meta response shape without
+  // depending on a removed customers.meta column.
   const q = await pool.query(
     `select q.*,
             c.name  as customer_name,
-            c.meta  as customer_meta
+            to_jsonb(c) as customer_meta
        from quotations q
        left join customers c on c.id = q.customer_id${customerBusinessJoin}
       where q.id = $1${quoteBusinessRef ? ` and q.business_id = ${quoteBusinessRef}` : ""}${
@@ -70,7 +72,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   const itemParams: unknown[] = [id];
   const itemBusinessFilter = hasQuotationItemBusiness ? ` and business_id = $${itemParams.push(businessId)}` : "";
   const itemsRs = await pool.query(
-    `select id, product_id, description, qty, price, tax, discount, meta
+    `select id, product_id, description, qty, price, tax, discount, total, batch_no, exp_date
        from quotation_items
       where quotation_id = $1${itemBusinessFilter}
       order by id asc`,
