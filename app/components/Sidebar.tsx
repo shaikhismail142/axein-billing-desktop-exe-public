@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { Boxes, FileText, Gauge, PackageSearch, ReceiptText, Settings2, ShoppingCart, TrendingUp, Warehouse } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 type SidebarProps = { open?: boolean; onClose?: () => void; collapsed?: boolean };
 
@@ -23,6 +25,18 @@ const FALLBACK_NAV: NavItem[] = [
   { key: 'accounting', href: '/accounting', label: 'Accounting' },
   { key: 'profile', href: '/profile', label: 'Profile' },
 ];
+
+const NAV_ICONS: Record<string, LucideIcon> = {
+  dashboard: Gauge,
+  billing: ReceiptText,
+  invoices: FileText,
+  quotations: FileText,
+  products: PackageSearch,
+  inventory: Warehouse,
+  purchases: ShoppingCart,
+  accounting: TrendingUp,
+  profile: Settings2,
+};
 
 export default function Sidebar({ open = false, onClose, collapsed = false }: SidebarProps) {
   const pathname = usePathname();
@@ -60,18 +74,17 @@ export default function Sidebar({ open = false, onClose, collapsed = false }: Si
   }, []);
 
   const Nav = (
-    <nav className={`space-y-1 ${collapsed ? "p-3" : "p-4"}`}>
-      {!collapsed && (
-        <div className="mb-3 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
-          AxEin Billing
-        </div>
-      )}
+    <nav className={`app-sidebar-nav ${collapsed ? "is-collapsed" : ""}`}>
+      <Link href="/dashboard" className="app-sidebar-brand" title="AxEin Billing">
+        <span className="app-sidebar-logo">AB</span>
+        {!collapsed && <span><strong>AxEin</strong><small>Billing workspace</small></span>}
+      </Link>
       {nav.map((item) => {
         const active =
           item.href === '/dashboard'
             ? pathname === '/dashboard'
             : pathname === item.href || pathname.startsWith(item.href + '/');
-        const icon = item.label.slice(0, 1).toUpperCase();
+        const Icon = NAV_ICONS[item.key] || Boxes;
         return (
           <Link
             key={item.href}
@@ -79,7 +92,7 @@ export default function Sidebar({ open = false, onClose, collapsed = false }: Si
             onClick={onClose}
             title={item.label}
             className={[
-              "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors",
+              "app-sidebar-link group",
               collapsed ? "justify-center" : "",
             ].join(" ")}
             style={{
@@ -91,16 +104,7 @@ export default function Sidebar({ open = false, onClose, collapsed = false }: Si
             }}
             aria-current={active ? "page" : undefined}
           >
-            <span
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-semibold"
-              style={{
-                background: 'color-mix(in oklab, var(--surface-1) 70%, transparent)',
-                border: '1px solid var(--glass-brd)',
-              }}
-              aria-hidden
-            >
-              {icon}
-            </span>
+            <span className="app-sidebar-icon" aria-hidden><Icon size={18} strokeWidth={1.8} /></span>
             {!collapsed && <span className="truncate">{item.label}</span>}
           </Link>
         );
@@ -161,7 +165,7 @@ export default function Sidebar({ open = false, onClose, collapsed = false }: Si
 
       {/* Desktop / tablet (sticky) */}
       <aside
-        className={`sticky top-0 hidden h-[100dvh] shrink-0 sm:block transition-[width] duration-200 ${collapsed ? "w-20" : "w-64"}`}
+          className={`app-sidebar sticky top-0 hidden h-[100dvh] shrink-0 sm:block transition-[width] duration-200 ${collapsed ? "w-20" : "w-64"}`}
         style={{
           borderRight: '1px solid var(--glass-brd)',
           background: 'var(--glass-bg)',

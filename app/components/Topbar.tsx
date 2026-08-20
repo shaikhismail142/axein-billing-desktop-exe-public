@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from '@/app/providers/ThemeProvider';
+import AlertsBell from '@/app/_components/AlertsBell';
 
 function pageTitle(pathname: string | null) {
   if (!pathname || pathname === '/') return 'Dashboard & Reports';
@@ -58,14 +59,14 @@ export default function Topbar({ onMenu, collapsed }: { onMenu: () => void; coll
 
   return (
     <header
-      className="sticky top-0 z-30"
+      className="app-topbar sticky top-0 z-30"
       style={{
         background: 'color-mix(in oklab, var(--surface-1) 80%, transparent)',
         backdropFilter: 'blur(10px) saturate(160%)',
         borderBottom: '1px solid var(--glass-brd)',
       }}
     >
-      <div className="h-14 px-4 flex items-center gap-3">
+      <div className="app-topbar-inner">
         {/* Hamburger (mobile drawer + desktop collapse) */}
         <button
           onClick={onMenu}
@@ -89,15 +90,14 @@ export default function Topbar({ onMenu, collapsed }: { onMenu: () => void; coll
             <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        <div className="hidden min-w-0 flex-col sm:flex">
-          <div className="text-[11px] uppercase tracking-[0.24em]" style={{ color: 'var(--muted)' }}>
-            AxEin Billing
-          </div>
+        <div className="min-w-0 flex flex-col">
+          <div className="app-topbar-eyebrow">AxEin Billing</div>
           <div className="font-semibold" style={{ color: 'var(--text)' }}>
             {title}
           </div>
         </div>
         <div className="ml-auto flex min-w-0 items-center gap-2">
+          <AlertsBell />
           {showSessionActions ? (
             <>
               <button

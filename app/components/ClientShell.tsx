@@ -39,15 +39,15 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   }, [toggleCollapsed]);
 
   return (
-    <div className="flex flex-1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+    <div className="app-workspace flex flex-1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
       {/* Sidebar (drawer on mobile, fixed on sm+) */}
       <Sidebar open={open} collapsed={collapsed} onClose={() => setOpen(false)} />
 
       {/* Content area */}
-      <div className="flex-1 min-w-0">
+      <div className="app-workspace-main flex-1 min-w-0">
         <Topbar onMenu={onBurger} collapsed={collapsed} />
-        <main id="main" className="app-main p-4">
-          <div className="container">{children}</div>
+        <main id="main" className="app-main">
+          <div className="app-content-frame">{children}</div>
         </main>
       </div>
     </div>
