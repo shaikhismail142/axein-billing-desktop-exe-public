@@ -156,6 +156,7 @@ export async function POST(req: Request) {
       email: String(user.email || ""),
       full_name: String(user.full_name || ""),
       role_codes: roleCodes,
+      auth_provider: "local",
     });
 
     await audit(Number(user.business_id), "auth.login.success", "user", String(user.id), Number(user.id), {

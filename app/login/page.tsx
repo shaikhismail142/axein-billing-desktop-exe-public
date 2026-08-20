@@ -11,10 +11,12 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hostedPortal, setHostedPortal] = useState(false);
+  const [defenzoEntry, setDefenzoEntry] = useState(false);
 
   useEffect(() => {
     const hosted = window.location.hostname === "billing.axein.in";
     setHostedPortal(hosted);
+    setDefenzoEntry(hosted && new URLSearchParams(window.location.search).get("provider") === "defenzo");
     // Defenzo SSO redirects authenticated users directly to their requested
     // module. Redirecting again here can race the server guard and create a
     // /login <-> /dashboard loop when an old session cookie is present.
@@ -74,7 +76,7 @@ export default function LoginPage() {
           <span className="ax-brand-badge" style={{ width: 42, height: 42 }}>AB</span>
           <div>
             <div className="text-xl font-semibold tracking-tight">AxEin Billing</div>
-            <div className="text-xs uppercase tracking-[0.2em] opacity-60">Defenzo Workspace</div>
+            <div className="text-xs uppercase tracking-[0.2em] opacity-60">{defenzoEntry ? "Defenzo Workspace" : "Secure Billing Workspace"}</div>
           </div>
         </div>
         <div className="card" style={{ padding: 28, boxShadow: "0 24px 70px color-mix(in oklab, var(--text) 14%, transparent)" }}>
@@ -83,12 +85,12 @@ export default function LoginPage() {
         </div>
         <h1 className="text-3xl font-semibold tracking-tight" style={{ margin: 0 }}>Welcome back</h1>
         <p className="muted" style={{ marginTop: 8 }}>
-          {hostedPortal
+          {defenzoEntry
             ? "AxEin Billing uses your connected business portal for secure sign-in."
             : "Use your approved user account to access AxEin Billing."}
         </p>
 
-        {hostedPortal ? (
+        {defenzoEntry ? (
           <div style={{ marginTop: 22, display: "grid", gap: 14 }}>
             <a className="btn btn-primary" href="https://defenzo.in/admin/" style={{ minHeight: 48, justifyContent: "center" }}>
               Continue with Defenzo

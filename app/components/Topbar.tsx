@@ -47,13 +47,16 @@ export default function Topbar({ onMenu, collapsed }: { onMenu: () => void; coll
   async function logout() {
     if (loggingOut) return;
     setLoggingOut(true);
+    let destination = '/login';
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && typeof data?.redirect === 'string') destination = data.redirect;
     } catch {
       // ignore
     } finally {
       // Force a full reload so cookies + middleware state are consistent in WebView.
-      window.location.assign('/login');
+      window.location.assign(destination);
     }
   }
 

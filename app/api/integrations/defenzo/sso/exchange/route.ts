@@ -121,6 +121,7 @@ export async function POST(req: Request) {
       email,
       full_name: fullName,
       role_codes: [roleCode],
+      auth_provider: "defenzo",
     });
     const publicOrigin = String(process.env.AXEIN_PUBLIC_URL || "").trim();
     const redirect = new URL(safeNextPath(body.next), publicOrigin || req.url);

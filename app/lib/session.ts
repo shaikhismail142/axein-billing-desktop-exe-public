@@ -11,6 +11,7 @@ export type SessionClaims = {
   email: string;
   full_name: string;
   role_codes: string[];
+  auth_provider?: "local" | "defenzo";
   iat: number;
   exp: number;
 };
