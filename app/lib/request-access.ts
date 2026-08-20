@@ -194,6 +194,9 @@ export async function requireRevenueAccess(req: Request): Promise<
 
   const ctx = await resolveAccessContext(req);
   if (isSaasDeployment()) {
+    if (ctx.businessId <= 0 || ctx.userId <= 0) {
+      return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+    }
     const moduleBlocked = await enforceTenantModuleAccess(ctx.businessId, ["perm.reports.view"]);
     if (moduleBlocked) return { ok: false, response: moduleBlocked };
   }
@@ -238,6 +241,9 @@ export async function requireAnyPermission(
 
   const ctx = await resolveAccessContext(req);
   if (isSaasDeployment()) {
+    if (ctx.businessId <= 0 || ctx.userId <= 0) {
+      return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+    }
     const moduleBlocked = await enforceTenantModuleAccess(ctx.businessId, permissionCodes);
     if (moduleBlocked) return { ok: false, response: moduleBlocked };
   }
@@ -288,6 +294,9 @@ export async function requireAllPermissions(
 
   const ctx = await resolveAccessContext(req);
   if (isSaasDeployment()) {
+    if (ctx.businessId <= 0 || ctx.userId <= 0) {
+      return { ok: false, response: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+    }
     const moduleBlocked = await enforceTenantModuleAccess(ctx.businessId, permissionCodes);
     if (moduleBlocked) return { ok: false, response: moduleBlocked };
   }
