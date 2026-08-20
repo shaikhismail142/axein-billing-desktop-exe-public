@@ -119,7 +119,8 @@ export async function POST(req: Request) {
       full_name: fullName,
       role_codes: [roleCode],
     });
-    const redirect = new URL(safeNextPath(body.next), req.url);
+    const publicOrigin = String(process.env.AXEIN_PUBLIC_URL || "").trim();
+    const redirect = new URL(safeNextPath(body.next), publicOrigin || req.url);
     const response = NextResponse.redirect(redirect, 303);
     response.headers.set("Set-Cookie", makeSessionCookie(token));
     response.headers.set("Cache-Control", "no-store");
