@@ -679,9 +679,8 @@ export default function Billing() {
         </div>
 
         {/* Summary + Payment */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, gap: 12, flexWrap: "wrap" }}>
-          <div />
-          <div className="card no-break" style={{ padding: 12, minWidth: 320 }}>
+        <div className="quick-summary-row">
+          <div className="card no-break quick-summary-card">
             <div className="flex justify-between"><span>Taxable</span><b>{inr(totals.taxable)}</b></div>
             <div className="flex justify-between"><span>Tax</span><b>{inr(totals.tax)}</b></div>
             {customExtraTaxAmount !== 0 ? (

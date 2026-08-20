@@ -433,7 +433,8 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 
 /* Quick Billing */
 .quick-billing-workspace { padding: 20px; }
-.quick-billing-shell { max-width: 1500px; margin: 0 auto; display: grid; gap: 14px; }
+.quick-billing-shell { max-width: 1500px; min-width: 0; margin: 0 auto; display: grid; gap: 14px; }
+.quick-billing-shell > *, .quick-items-section, .quick-items-table, .quick-items-table .table-wrap { min-width: 0; }
 .quick-billing-titlebar {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 24px;
   padding: 22px 24px; border-radius: 18px; color: #fff;
@@ -479,6 +480,8 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .quick-optional-grid { display: grid; grid-template-columns: minmax(300px,.8fr) minmax(360px,1.2fr); gap: 14px; }
 .quick-optional-grid .input { width: 100%; }
 .quick-optional-block + .quick-optional-block { margin-top: 13px; }
+.quick-summary-row { display: flex; justify-content: flex-end; margin-top: 0; }
+.quick-summary-card { padding: 15px; width: min(100%, 390px); }
 .quick-payment-section { margin-top: 0; }
 .quick-billing-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 4px 0 16px; }
 .quick-billing-actions .btn { min-height: 44px; display: inline-flex; align-items: center; text-decoration: none; }
