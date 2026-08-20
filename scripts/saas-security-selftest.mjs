@@ -21,6 +21,10 @@ const session = read("app/lib/session.ts");
 assert.match(session, /AXEIN_SESSION_SECRET is required in SaaS mode/);
 assert.match(session, /; Secure/);
 
+const middleware = read("middleware.ts");
+assert.match(middleware, /await verifySaasSession\(req\)/);
+assert.doesNotMatch(middleware, /Hosted mode fails closed when session validation is unavailable/);
+
 const migration = read("db/migrations/20260820_saas_defenzo_foundation.sql");
 for (const table of ["tenant_entitlements", "integration_clients", "integration_nonces", "integration_events", "integration_record_links", "automotive_vehicles", "automotive_jobs", "document_snapshots"]) {
   assert.match(migration, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`));

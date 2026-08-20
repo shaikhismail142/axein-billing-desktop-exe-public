@@ -1,6 +1,33 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+const SESSION_COOKIE_NAME = "axein_session";
+
+async function verifySaasSession(req: NextRequest) {
+  const token = req.cookies.get(SESSION_COOKIE_NAME)?.value || "";
+  const [payload, signature] = token.split(".");
+  const secret = process.env.AXEIN_SESSION_SECRET || process.env.NEXTAUTH_SECRET || "";
+  if (!payload || !signature || !secret) return false;
+  try {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+    const normalized = signature.replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(normalized + "=".repeat((4 - normalized.length % 4) % 4)), (c) => c.charCodeAt(0));
+    const valid = await crypto.subtle.verify("HMAC", key, bytes, new TextEncoder().encode(payload));
+    if (!valid) return false;
+    const payloadBase64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(payloadBase64 + "=".repeat((4 - payloadBase64.length % 4) % 4)));
+    return Number(claims?.user_id) > 0 && Number(claims?.business_id) > 0 && Number(claims?.exp) > Date.now() / 1000;
+  } catch {
+    return false;
+  }
+}
+
 // Keep headers no-store to avoid caching activation status
 const NO_STORE_HEADERS = {
   "cache-control": "no-store",
@@ -52,19 +79,10 @@ export async function middleware(req: NextRequest) {
     }
     if (pathname.startsWith("/login")) return NextResponse.next();
 
-    const authURL = req.nextUrl.clone();
-    authURL.pathname = "/api/auth/session";
-    authURL.search = "";
-    try {
-      const authRes = await fetch(authURL, {
-        cache: "no-store",
-        headers: { ...NO_STORE_HEADERS, cookie: req.headers.get("cookie") || "" } as any,
-      });
-      const auth = authRes.ok ? await authRes.json().catch(() => ({})) : {};
-      if (auth?.authenticated) return NextResponse.next();
-    } catch {
-      // Hosted mode fails closed when session validation is unavailable.
-    }
+    // Verify the signed cookie locally. Calling this application's public
+    // session endpoint from middleware can lose cookies at the reverse proxy
+    // boundary and create an authenticated /login <-> module redirect loop.
+    if (await verifySaasSession(req)) return NextResponse.next();
     const loginURL = req.nextUrl.clone();
     loginURL.pathname = "/login";
     loginURL.searchParams.set("next", pathname);
