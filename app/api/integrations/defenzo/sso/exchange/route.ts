@@ -11,6 +11,9 @@ const ROLE_MAP: Record<string, string> = {
   admin: "admin",
   manager: "manager",
   technician: "viewer",
+  billing: "invoice_operator",
+  billing_staff: "invoice_operator",
+  invoice_operator: "invoice_operator",
 };
 
 function safeNextPath(value: unknown): string {

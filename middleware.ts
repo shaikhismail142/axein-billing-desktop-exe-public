@@ -22,9 +22,11 @@ async function verifySaasSession(req: NextRequest) {
     if (!valid) return false;
     const payloadBase64 = payload.replace(/-/g, "+").replace(/_/g, "/");
     const claims = JSON.parse(atob(payloadBase64 + "=".repeat((4 - payloadBase64.length % 4) % 4)));
-    return Number(claims?.user_id) > 0 && Number(claims?.business_id) > 0 && Number(claims?.exp) > Date.now() / 1000;
+    return Number(claims?.user_id) > 0 && Number(claims?.business_id) > 0 && Number(claims?.exp) > Date.now() / 1000
+      ? claims
+      : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -82,7 +84,20 @@ export async function middleware(req: NextRequest) {
     // Verify the signed cookie locally. Calling this application's public
     // session endpoint from middleware can lose cookies at the reverse proxy
     // boundary and create an authenticated /login <-> module redirect loop.
-    if (await verifySaasSession(req)) return NextResponse.next();
+    const claims = await verifySaasSession(req);
+    if (claims) {
+      const roles = new Set(Array.isArray(claims.role_codes) ? claims.role_codes.map((role: unknown) => String(role).toLowerCase()) : []);
+      if (roles.has("invoice_operator")) {
+        const allowedPages = ["/billing", "/invoices", "/print/invoice"];
+        if (!allowedPages.some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"))) {
+          const url = req.nextUrl.clone();
+          url.pathname = "/billing";
+          url.search = "";
+          return NextResponse.redirect(url);
+        }
+      }
+      return NextResponse.next();
+    }
     const loginURL = req.nextUrl.clone();
     loginURL.pathname = "/login";
     loginURL.searchParams.set("next", pathname);
