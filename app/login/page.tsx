@@ -10,8 +10,10 @@ export default function LoginPage() {
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hostedPortal, setHostedPortal] = useState(false);
 
   useEffect(() => {
+    setHostedPortal(window.location.hostname === "billing.axein.in");
     (async () => {
       try {
         const res = await fetch("/api/auth/session", { cache: "no-store" });
@@ -58,10 +60,21 @@ export default function LoginPage() {
       <div className="card" style={{ maxWidth: 520, margin: "0 auto", padding: 16 }}>
         <h1 style={{ margin: 0 }}>Sign In</h1>
         <p className="muted" style={{ marginTop: 8 }}>
-          Use your approved user account to access AxEin Billing.
+          {hostedPortal
+            ? "AxEin Billing uses your connected business portal for secure sign-in."
+            : "Use your approved user account to access AxEin Billing."}
         </p>
 
-        <form onSubmit={submit} style={{ marginTop: 12, display: "grid", gap: 10 }}>
+        {hostedPortal ? (
+          <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
+            <a className="btn" href="https://defenzo.in/admin/">
+              Return to Defenzo
+            </a>
+            <p className="muted" style={{ margin: 0 }}>
+              Sign in to Defenzo, then select Invoice. You will not need a second password.
+            </p>
+          </div>
+        ) : <form onSubmit={submit} style={{ marginTop: 12, display: "grid", gap: 10 }}>
           <label>
             <div className="muted">Business Code (optional)</div>
             <input
@@ -97,11 +110,11 @@ export default function LoginPage() {
           <button className="btn" type="submit" disabled={busy}>
             {busy ? "Signing in..." : "Sign In"}
           </button>
-        </form>
+        </form>}
 
-        <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {!hostedPortal ? <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
           <a className="btn" href="/activate">Go to Activation</a>
-        </div>
+        </div> : null}
       </div>
     </div>
   );

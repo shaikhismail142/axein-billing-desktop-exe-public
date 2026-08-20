@@ -46,6 +46,10 @@ assert.match(integrations, /actor:admin.actorLabel/);
 const ssoExchange = read("app/api/integrations/defenzo/sso/exchange/route.ts");
 assert.match(ssoExchange, /process\.env\.AXEIN_PUBLIC_URL/);
 
+const loginPage = read("app/login/page.tsx");
+assert.match(loginPage, /window\.location\.hostname === "billing\.axein\.in"/);
+assert.match(loginPage, /Return to Defenzo/);
+
 const controlPlane = read("app/lib/control-plane-auth.ts");
 for (const binding of ["method.toUpperCase()", "input.path", "input.timestamp", "input.nonce", "bodyDigest(input.rawBody)"]) {
   assert.ok(controlPlane.includes(binding), `control-plane signature must bind ${binding}`);
