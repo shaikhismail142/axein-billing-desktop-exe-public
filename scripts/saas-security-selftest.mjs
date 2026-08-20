@@ -38,6 +38,10 @@ const tenants = read("app/api/platform/tenants/route.ts");
 assert.match(tenants, /source: "tenant_provision"/);
 assert.match(tenants, /authorizePlatformRequest/);
 
+const integrations = read("app/api/platform/integrations/route.ts");
+assert.match(integrations, /authorizePlatformRequest/);
+assert.match(integrations, /actor:admin.actorLabel/);
+
 const controlPlane = read("app/lib/control-plane-auth.ts");
 for (const binding of ["method.toUpperCase()", "input.path", "input.timestamp", "input.nonce", "bodyDigest(input.rawBody)"]) {
   assert.ok(controlPlane.includes(binding), `control-plane signature must bind ${binding}`);

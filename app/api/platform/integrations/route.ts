@@ -4,16 +4,17 @@ export const dynamic = "force-dynamic";
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { requirePlatformAdmin } from "@/app/lib/platform-admin";
+import { authorizePlatformRequest } from "@/app/lib/control-plane-auth";
 
 function digest(secret: string, clientKey: string) {
   return crypto.createHmac("sha256", secret).update(clientKey).digest("base64url");
 }
 
 export async function POST(req: Request) {
-  const admin = await requirePlatformAdmin(req);
-  if (!admin.ok) return admin.response;
-  const body = await req.json().catch(() => ({} as any));
+  const rawBody = await req.text();
+  const admin = await authorizePlatformRequest(req, rawBody);
+  if ("response" in admin) return admin.response;
+  const body = (() => { try { return JSON.parse(rawBody || "{}"); } catch { return {}; } })() as any;
   const businessId = Number(body.business_id || 0);
   const provider = String(body.provider || "defenzo").toLowerCase().replace(/[^a-z0-9_-]/g, "");
   if (businessId <= 0 || !provider) return NextResponse.json({ error: "invalid_integration" }, { status: 400 });
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   await pool.query(
     `INSERT INTO audit_logs (business_id,actor_user_id,action,entity_type,entity_id,meta_json)
      VALUES ($1,$2,'platform.integration.rotate','integration',$3,$4::jsonb)`,
-    [businessId,admin.session.user_id,provider,JSON.stringify({ client_key:clientKey })]
+    [businessId,admin.actorUserId,provider,JSON.stringify({ client_key:clientKey,actor:admin.actorLabel })]
   );
   return NextResponse.json({
     ok:true,
