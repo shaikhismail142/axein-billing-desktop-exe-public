@@ -399,6 +399,59 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .table th { font-weight: 700; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
 .table thead th { color: var(--thead-text); }
 
+/* Document screens retain all columns and expose horizontal scrolling on small displays. */
+.document-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.document-detail-summary { min-width: 0; overflow-wrap: anywhere; }
+.document-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.document-table-wrap { overflow-x: auto; max-width: 100%; scrollbar-gutter: stable; }
+.document-table { min-width: 980px; border-collapse: collapse; }
+
+.print-picker-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.print-picker-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.print-preview-frame {
+  border: 1px solid var(--glass-brd);
+  border-radius: 12px;
+  overflow: auto;
+  background: #e5e7eb;
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+}
+.print-preview-frame.is-thermal { padding: 14px; }
+.print-preview-frame iframe { flex: 0 0 auto; max-width: 100%; }
+
+@media (max-width: 640px) {
+  .document-detail-header { flex-direction: column; }
+  .document-detail-actions { justify-content: flex-start; width: 100%; }
+  .document-detail-actions > * { flex: 1 1 calc(50% - 8px); text-align: center; }
+  .document-table-wrap::before {
+    content: "Swipe horizontally to view all columns";
+    display: block;
+    position: sticky;
+    left: 0;
+    padding: 8px 10px;
+    color: var(--muted);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--glass-brd);
+    font-size: 0.75rem;
+  }
+  .print-picker-actions { width: 100%; }
+  .print-picker-actions button { flex: 1 1 calc(50% - 8px); }
+  .print-preview-frame.is-a4 { justify-content: flex-start; }
+  .print-preview-frame.is-a4 iframe { min-width: 794px; }
+}
+
 /* =========================
    DARK MODE LEGACY OVERRIDES
    (helps pages still using Tailwind light tokens)

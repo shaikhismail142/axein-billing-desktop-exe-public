@@ -119,8 +119,8 @@ export default async function InvoicePage({ params }: { params: { id: string } }
   return (
     <div className="p-6 space-y-4">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="document-detail-header">
+        <div className="document-detail-summary">
           <h1 className="text-2xl font-semibold">Invoice {s.invoice_no ?? s.id}</h1>
           <p className="text-sm text-gray-600">Customer: {s.customer_name ?? "-"}</p>
           {(s.patient_name || s.doctor_name || s.dc_no) && (
@@ -147,7 +147,7 @@ export default async function InvoicePage({ params }: { params: { id: string } }
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="document-detail-actions">
           <DownloadButton
             className="rounded-lg border px-4 py-2 text-sm"
             url={`/api/invoices/${id}/pdf`}
@@ -175,8 +175,8 @@ export default async function InvoicePage({ params }: { params: { id: string } }
       </div>
 
       {/* Items */}
-      <div className="rounded-xl border overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="document-table-wrap rounded-xl border" role="region" aria-label="Invoice items" tabIndex={0}>
+        <table className="document-table w-full text-sm">
           <thead className="bg-gray-50 text-gray-700 dark:bg-slate-100 dark:text-slate-900">
             <tr>
               <th className="text-left px-3 py-2">Description</th>

@@ -151,6 +151,7 @@ export default function SettingsPage() {
 
   // License status
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
+  const [isSaas, setIsSaas] = useState(false);
   const [countdown, setCountdown] = useState<string | null>(null);
 
   // Invoice defaults
@@ -183,6 +184,10 @@ export default function SettingsPage() {
 
   // Load business settings
   useEffect(() => {
+    fetch('/api/health', { cache: 'no-store' })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => setIsSaas(j?.mode === 'saas'))
+      .catch(() => undefined);
     (async () => {
       try {
         setLoading(true);
@@ -439,7 +444,7 @@ export default function SettingsPage() {
         <Link className="btn" href="/profile/settings/invoice-fields">Invoice Custom Fields</Link>
       </div>
 
-      {licenseStatus && (
+      {!isSaas && licenseStatus && (
         <div
           className={[
             "rounded-2xl border p-4 shadow-sm",
@@ -730,8 +735,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* Activation & Trial */}
-      <section className="card" style={{ padding: 0 }}>
+      {/* Desktop activation is intentionally hidden for hosted tenants. */}
+      {!isSaas && <section className="card" style={{ padding: 0 }}>
         <div className="flex items-center justify-between border-b p-4" style={{ borderColor: "var(--glass-brd)" }}>
           <h2 className="text-lg font-semibold">Activation & Extend License</h2>
           <span className="text-xs opacity-70">Paste a new key to renew/upgrade seats or validity</span>
@@ -739,10 +744,10 @@ export default function SettingsPage() {
         <Suspense fallback={<div className="p-6 text-sm opacity-70">Loading…</div>}>
           <LicensePanel redirectOnActive={false} redirectAfterSuccess={false} />
         </Suspense>
-      </section>
+      </section>}
 
       {/* Template reset */}
-      <section className="card" style={{ padding: 16 }}>
+      {!isSaas && <section className="card" style={{ padding: 16 }}>
         <h2 className="text-lg font-semibold">Setup Wizard</h2>
         <p className="mt-1 text-sm opacity-80">
           Re-run the setup wizard to review activation and update template/navigation defaults. License stays intact.
@@ -750,7 +755,7 @@ export default function SettingsPage() {
         <div className="mt-3">
           <Link className="btn btn-primary" href="/activate">Open Setup Wizard</Link>
         </div>
-      </section>
+      </section>}
 
       {/* Backup & Restore */}
       <section className="card" style={{ padding: 16 }}>

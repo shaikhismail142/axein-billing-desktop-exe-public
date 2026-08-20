@@ -136,7 +136,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       table, tr, td, th { break-inside: avoid; page-break-inside: avoid; }
       .no-break { break-inside: avoid; page-break-inside: avoid; }
     }
-    body { font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:${embed ? "0" : "24px"}; color:#0b1220; }
+    body { font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:${embed ? "0" : "24px"}; color:#0b1220; font-size:12px; line-height:1.35; }
     h1,h2,h3 { margin:0; }
     .row { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
     .muted { color:#64748b; }
@@ -147,7 +147,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     .header-meta { text-align:right; font-size:12px; line-height:1.4; }
     .balance { background:#eef2ff; color:#0b1220; padding:8px 20px; text-align:right; font-weight:700; }
     table { width:100%; border-collapse:collapse; margin-top:12px; }
-    th, td { border-top:1px solid #e5e7eb; padding:6px 8px; text-align:left; vertical-align:top; }
+    th, td { border-top:1px solid #e5e7eb; padding:6px 5px; text-align:left; vertical-align:top; overflow-wrap:anywhere; word-break:normal; }
+    th { font-size:10px; white-space:nowrap; }
     .right { text-align:right; }
     .totals { margin-top:12px; display:flex; justify-content:flex-end; }
     .box { border:1px solid #e5e7eb; padding:10px; min-width:280px; }
@@ -222,17 +223,17 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       <tr>
         <th style="width:40px">#</th>
         <th>Description</th>
-        <th style="width:90px">Category</th>
-        <th style="width:90px">HSN</th>
-        <th style="width:90px">Lot</th>
-        <th style="width:90px">Expiry</th>
-        <th class="right" style="width:70px">Qty</th>
-        <th class="right" style="width:100px">Rate</th>
-        <th class="right" style="width:80px">Disc%</th>
-        <th class="right" style="width:70px">GST%</th>
-        <th class="right" style="width:120px">Taxable</th>
-        <th class="right" style="width:100px">Tax</th>
-        <th class="right" style="width:120px">Amount</th>
+        <th style="width:78px">Category</th>
+        <th style="width:48px">HSN</th>
+        <th style="width:48px">Lot</th>
+        <th style="width:58px">Expiry</th>
+        <th class="right" style="width:42px">Qty</th>
+        <th class="right" style="width:78px">Rate</th>
+        <th class="right" style="width:48px">Disc%</th>
+        <th class="right" style="width:42px">GST%</th>
+        <th class="right" style="width:86px">Taxable</th>
+        <th class="right" style="width:76px">Tax</th>
+        <th class="right" style="width:88px">Amount</th>
       </tr>
     </thead>
     <tbody>

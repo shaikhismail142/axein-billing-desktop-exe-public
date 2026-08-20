@@ -82,8 +82,8 @@ export default function PrintPickerClient(props: Props) {
 
   return (
     <div className="container">
-      <div className="card" style={{ padding: 16 }}>
-        <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <div className="card print-picker-header" style={{ padding: 16 }}>
+        <div className="print-picker-heading">
           <div>
             <h1 style={{ margin: 0 }}>{props.title}</h1>
             {props.subtitle ? (
@@ -92,7 +92,7 @@ export default function PrintPickerClient(props: Props) {
               </p>
             ) : null}
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="print-picker-actions">
             <button className={tab === "a4" ? "btn-primary" : "btn"} onClick={() => setTab("a4")} disabled={busy}>
               A4 Preview
             </button>
@@ -137,17 +137,7 @@ export default function PrintPickerClient(props: Props) {
           ) : null}
         </div>
 
-        <div
-          style={{
-            border: "1px solid var(--glass-brd)",
-            borderRadius: 12,
-            overflow: "hidden",
-            background: "var(--surface-1)",
-            display: "flex",
-            justifyContent: "center",
-            padding: tab === "thermal" ? 14 : 0,
-          }}
-        >
+        <div className={`print-preview-frame ${tab === "thermal" ? "is-thermal" : "is-a4"}`}>
           <iframe
             title={iframeTitle}
             src={iframeSrc}
