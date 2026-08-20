@@ -40,10 +40,11 @@ export async function GET(req: Request) {
 
     if (!q) {
       const rs = await pool.query(
-        `SELECT id, name, phone, gstin, address
-           FROM customers
+        `SELECT c.id, c.name, c.phone, c.gstin, c.address,
+                ${scoped ? "EXISTS(SELECT 1 FROM integration_record_links l WHERE l.business_id=$1 AND l.provider='defenzo' AND l.entity_type='customer' AND l.internal_id=c.id::text)" : "false"} AS crm_linked
+           FROM customers c
           ${scoped ? "WHERE business_id = $1" : ""}
-          ORDER BY name ASC
+          ORDER BY c.name ASC
           LIMIT $${scoped ? 2 : 1}`,
         scoped ? [businessId, limit] : [limit]
       );
@@ -51,13 +52,14 @@ export async function GET(req: Request) {
     }
 
     const rs = await pool.query(
-      `SELECT id, name, phone, gstin, address
-         FROM customers
+        `SELECT c.id, c.name, c.phone, c.gstin, c.address,
+                ${scoped ? "EXISTS(SELECT 1 FROM integration_record_links l WHERE l.business_id=$1 AND l.provider='defenzo' AND l.entity_type='customer' AND l.internal_id=c.id::text)" : "false"} AS crm_linked
+         FROM customers c
         WHERE ${scoped ? "business_id = $1 AND" : ""}
           (name ILIKE $${scoped ? 2 : 1}
            OR phone ILIKE $${scoped ? 2 : 1}
            OR gstin ILIKE $${scoped ? 2 : 1})
-        ORDER BY name ASC
+        ORDER BY c.name ASC
         LIMIT $${scoped ? 3 : 2}`,
       scoped ? [businessId, `%${q}%`, limit] : [`%${q}%`, limit]
     );

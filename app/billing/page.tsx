@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from "next/link";
-import { Plus, RotateCcw, Search, Trash2, UserRound, X } from "lucide-react";
+import { BriefcaseBusiness, Cloud, Plus, RotateCcw, Search, Trash2, UserRound, X } from "lucide-react";
 import {
   computeCustomFieldTotals,
   getCustomFieldOptions,
@@ -29,7 +29,11 @@ type Customer = {
   name: string;
   phone?: string;
   gstin?: string;
+  crm_linked?: boolean;
 };
+
+type CrmService = { external_id: string; product_id: number | null; name: string; category: string; unit_price: number; gst_slab: number };
+type CrmJob = { id: number; job_number: string; status: string; vehicle?: string; services: CrmService[] };
 
 type Item = {
   product_id?: number;
@@ -80,6 +84,9 @@ export default function Billing() {
   const [custSuggest, setCustSuggest] = useState<Customer[]>([]);
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState<string>('');
+  const [crmJobs, setCrmJobs] = useState<CrmJob[]>([]);
+  const [selectedCrmJobId, setSelectedCrmJobId] = useState<number | null>(null);
+  const [loadingCrm, setLoadingCrm] = useState(false);
 
   // Items
   const [items, setItems] = useState<Item[]>([]);
@@ -186,12 +193,18 @@ export default function Billing() {
   }
 
   // -------- Customer search ----------
+  async function loadCustomers(term: string) {
+    try {
+      const r = await fetch(`/api/customers?q=${encodeURIComponent(term)}&limit=30`, { cache: 'no-store' });
+      const j = await r.json();
+      setCustSuggest(Array.isArray(j?.items) ? j.items : []);
+    } catch { setCustSuggest([]); }
+  }
+
   useEffect(() => {
     const t = setTimeout(async () => {
       if (!custQ.trim()) { setCustSuggest([]); return; }
-      const r = await fetch(`/api/customers?q=${encodeURIComponent(custQ)}`);
-      const j = await r.json();
-      setCustSuggest(j.items || []);
+      await loadCustomers(custQ);
     }, 250);
     return () => clearTimeout(t);
   }, [custQ]);
@@ -201,7 +214,47 @@ export default function Billing() {
     setCustomerName(c.name);
     setCustQ(''); setCustSuggest([]);
   }
-  function clearCustomer() { setCustomerId(null); setCustomerName(''); }
+  function clearCustomer() { setCustomerId(null); setCustomerName(''); setCustQ(''); setCrmJobs([]); setSelectedCrmJobId(null); }
+
+  useEffect(() => {
+    if (!customerId) return;
+    let active = true;
+    setLoadingCrm(true);
+    fetch(`/api/integrations/defenzo/billing-context?customer_id=${customerId}`, { cache: 'no-store' })
+      .then(async (res) => res.ok ? res.json() : { jobs: [] })
+      .then((data) => {
+        if (!active) return;
+        const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+        setCrmJobs(jobs);
+        setSelectedCrmJobId(jobs[0]?.id ?? null);
+      })
+      .catch(() => active && setCrmJobs([]))
+      .finally(() => active && setLoadingCrm(false));
+    return () => { active = false; };
+  }, [customerId]);
+
+  function addCrmService(service: CrmService) {
+    setItems((prev) => [...prev, {
+      product_id: service.product_id || undefined,
+      name: service.name,
+      gst_slab: Number(service.gst_slab || 18),
+      qty: 1,
+      unit_price: Number(service.unit_price || 0),
+      discount_pct: 0,
+      category: service.category || 'Service',
+      hsn_code: null,
+      batch_no: '',
+      exp_date: '',
+    }]);
+  }
+
+  function addCrmJobServices(job: CrmJob) {
+    const existing = new Set(items.map((item) => `${item.product_id || ''}:${item.name.toLowerCase()}`));
+    job.services.forEach((service) => {
+      const key = `${service.product_id || ''}:${service.name.toLowerCase()}`;
+      if (!existing.has(key)) addCrmService(service);
+    });
+  }
 
   // -------- Items helpers ----------
   function updateItem(i: number, patch: Partial<Item>) {
@@ -373,6 +426,7 @@ export default function Billing() {
                   className="input"
                   placeholder="Search an existing customer or type a new customer name"
                   value={customerName || custQ}
+                  onFocus={() => { if (!customerId) void loadCustomers(custQ); }}
                   onChange={(e) => {
                     if (customerId) setCustomerId(null);
                     setCustomerName(e.target.value);
@@ -390,7 +444,7 @@ export default function Billing() {
                         onClick={() => pickCustomer(c)}
                         style={{ padding: '8px 10px', borderTop: '1px solid var(--glass-brd)', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
                       >
-                        <span>{c.name}</span>
+                        <span>{c.name} {c.crm_linked && <small className="quick-crm-badge"><Cloud size={11} /> CRM</small>}</span>
                         <span style={{ color: 'var(--muted)', fontSize: 12 }}>
                           {c.phone || c.gstin ? [c.phone, c.gstin].filter(Boolean).join(' • ') : ''}
                         </span>
@@ -410,6 +464,36 @@ export default function Billing() {
             </div>
           )}
         </section>
+
+        {customerId && (loadingCrm || crmJobs.length > 0) && (
+          <section className="quick-billing-section quick-crm-section">
+            <div className="quick-section-heading compact">
+              <div className="quick-section-heading-main"><span className="quick-section-icon"><BriefcaseBusiness size={18} /></span><div><h2>Defenzo CRM jobs & services</h2><p>Pick a previous or active job, then add its services as editable invoice lines.</p></div></div>
+              <span className="quick-crm-live"><Cloud size={13} /> Synced</span>
+            </div>
+            {loadingCrm ? <p className="muted">Loading CRM history...</p> : (
+              <>
+                <label className="quick-crm-job-select">CRM job
+                  <select value={selectedCrmJobId || ''} onChange={(e) => setSelectedCrmJobId(Number(e.target.value) || null)}>
+                    {crmJobs.map((job) => <option key={job.id} value={job.id}>{job.job_number} - {job.vehicle || 'Vehicle not set'} - {job.status}</option>)}
+                  </select>
+                </label>
+                {crmJobs.filter((job) => job.id === selectedCrmJobId).map((job) => (
+                  <div key={job.id} className="quick-crm-services">
+                    <div className="quick-crm-services-header"><strong>{job.services.length} service{job.services.length === 1 ? '' : 's'} from this job</strong><button type="button" className="btn" onClick={() => addCrmJobServices(job)} disabled={!job.services.length}><Plus size={15} /> Add all services</button></div>
+                    {job.services.map((service) => (
+                      <div key={`${job.id}-${service.external_id}-${service.name}`} className="quick-crm-service-row">
+                        <div><strong>{service.name}</strong><span>{service.category} · {inr(service.unit_price)}</span></div>
+                        <button type="button" className="btn" onClick={() => addCrmService(service)}><Plus size={15} /> Add</button>
+                      </div>
+                    ))}
+                    {!job.services.length && <p className="muted">No services were attached to this CRM job.</p>}
+                  </div>
+                ))}
+              </>
+            )}
+          </section>
+        )}
 
         {(hiddenOptionalFields.size > 0 || hiddenSections.size > 0) && (
           <div className="quick-restore-bar">

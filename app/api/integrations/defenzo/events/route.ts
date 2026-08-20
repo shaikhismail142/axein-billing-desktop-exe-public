@@ -8,7 +8,7 @@ import { authenticateIntegrationRequest } from "@/app/lib/integration-auth";
 type EventBody = {
   event_id?: string;
   event_type?: string;
-  entity_type?: "customer" | "vehicle" | "job";
+  entity_type?: "customer" | "vehicle" | "job" | "service";
   external_id?: string;
   version?: number;
   data?: Record<string, unknown>;
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   const externalId = text(body.external_id, 160);
   const version = Math.max(1, Number(body.version || 1));
   const data = body.data && typeof body.data === "object" ? body.data : {};
-  if (!eventId || !eventType || !externalId || !["customer", "vehicle", "job"].includes(entityType)) {
+  if (!eventId || !eventType || !externalId || !["customer", "vehicle", "job", "service"].includes(entityType)) {
     return NextResponse.json({ error: "invalid_event" }, { status: 400 });
   }
 
@@ -97,6 +97,42 @@ export async function POST(req: Request) {
            VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
           [client.businessId, text(data.name, 220) || "Unnamed customer", text(data.phone, 50) || null,
            text(data.email, 255) || null, text(data.gstin, 30) || null, text(data.address, 1000) || null]
+        );
+        internalId = Number(rs.rows[0].id);
+      }
+    } else if (entityType === "service") {
+      const serviceName = text(data.name, 220) || `Defenzo service ${externalId}`;
+      const category = text(data.category, 100) || "Service";
+      const price = Math.max(0, Number(data.base_price ?? data.price ?? 0) || 0);
+      const active = data.is_active !== false && Number(data.is_active ?? 1) !== 0;
+      const meta = JSON.stringify({
+        source_system: "defenzo",
+        source_external_id: externalId,
+        item_type: "service",
+        service_category: category,
+        estimated_hours: Number(data.estimated_hours || 0) || null,
+        description: text(data.description, 1000) || null,
+        active,
+        selling_price: price,
+        price,
+        stock_qty: 999999,
+        low_stock_threshold: 0,
+      });
+      if (internalId) {
+        await db.query(
+          `UPDATE products
+              SET name=$3, category=$4, selling_price=$5, price=$5, stock=999999,
+                  meta=$6::jsonb, updated_at=NOW()
+            WHERE id=$1 AND business_id=$2`,
+          [internalId, client.businessId, serviceName, category, price, meta]
+        );
+      } else {
+        const rs = await db.query(
+          `INSERT INTO products
+            (business_id,name,category,unit,gst_slab,selling_price,price,cost_price,opening_stock,stock,reorder_level,meta)
+           VALUES ($1,$2,$3,'service',18,$4,$4,0,999999,999999,0,$5::jsonb)
+           RETURNING id`,
+          [client.businessId, serviceName, category, price, meta]
         );
         internalId = Number(rs.rows[0].id);
       }
