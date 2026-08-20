@@ -1,0 +1,295 @@
+--- a/billing_portal/models.py
++++ b/billing_portal/models.py
+@@ -49,8 +49,42 @@
+ 
+     def __str__(self):
+         return self.legal_name
++
++
++class SaasTenant(TimeStampedModel):
++    STATUS_CHOICES = [
++        ("draft", "Draft"),
++        ("active", "Active"),
++        ("read_only", "Read only"),
++        ("suspended", "Suspended"),
++        ("expired", "Expired"),
++    ]
++    company = models.OneToOneField(
++        BillingCompany, on_delete=models.CASCADE, related_name="saas_tenant"
++    )
++    code = models.SlugField(max_length=80, unique=True)
++    operational_business_id = models.PositiveBigIntegerField(null=True, blank=True, unique=True)
++    plan_code = models.SlugField(max_length=80, default="standard")
++    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
++    starts_at = models.DateTimeField(null=True, blank=True)
++    ends_at = models.DateTimeField(null=True, blank=True)
++    user_limit = models.PositiveIntegerField(default=5)
++    modules = models.JSONField(default=list, blank=True)
++    business_template = models.SlugField(max_length=80, default="automotive_detailing")
++    read_only_after_expiry = models.BooleanField(default=True)
++    integration_provider = models.SlugField(max_length=40, default="defenzo")
++    integration_client_key = models.CharField(max_length=120, blank=True)
++    sync_status = models.CharField(max_length=30, default="pending")
++    last_synced_at = models.DateTimeField(null=True, blank=True)
++    last_sync_error = models.TextField(blank=True)
+ 
++    class Meta:
++        ordering = ["company__legal_name"]
+ 
++    def __str__(self):
++        return f"{self.company.legal_name} ({self.code})"
++
++
+ class BillingCompanyMember(TimeStampedModel):
+     ROLE_CHOICES = [("owner", "Owner"), ("member", "Member")]
+     company = models.ForeignKey(BillingCompany, on_delete=models.CASCADE, related_name="memberships")
+--- a/billing_portal/admin.py
++++ b/billing_portal/admin.py
+@@ -1,4 +1,5 @@
+ from django.contrib import admin
++from django.contrib import messages
+ 
+ from ats.admin_site import admin_site
+ 
+@@ -21,8 +22,10 @@
+     OfflineLease,
+     ProductEdition,
+     RecoveryCode,
++    SaasTenant,
+     SupportRequest,
+ )
++from .saas_control import ControlPlaneError, sync_tenant
+ 
+ 
+ class CompanyMemberInline(admin.TabularInline):
+@@ -38,6 +41,36 @@
+     inlines = [CompanyMemberInline]
+ 
+ 
++@admin.register(SaasTenant, site=admin_site)
++class SaasTenantAdmin(admin.ModelAdmin):
++    list_display = (
++        "company", "code", "plan_code", "status", "user_limit",
++        "starts_at", "ends_at", "sync_status", "last_synced_at",
++    )
++    list_filter = ("status", "plan_code", "business_template", "sync_status")
++    search_fields = ("company__legal_name", "code", "integration_client_key")
++    readonly_fields = (
++        "operational_business_id", "sync_status", "last_synced_at",
++        "last_sync_error", "created_at", "updated_at",
++    )
++    actions = ("sync_selected_tenants",)
++
++    @admin.action(description="Provision or sync selected tenants to AxEin SaaS")
++    def sync_selected_tenants(self, request, queryset):
++        succeeded = 0
++        failures = []
++        for tenant in queryset.select_related("company"):
++            try:
++                sync_tenant(tenant)
++                succeeded += 1
++            except ControlPlaneError as exc:
++                failures.append(f"{tenant.code}: {exc}")
++        if succeeded:
++            self.message_user(request, f"Synced {succeeded} SaaS tenant(s).", messages.SUCCESS)
++        if failures:
++            self.message_user(request, "; ".join(failures), messages.ERROR)
++
++
+ @admin.register(BillingProfile, site=admin_site)
+ class ProfileAdmin(admin.ModelAdmin):
+     list_display = (
+--- a/billing_portal/tests.py
++++ b/billing_portal/tests.py
+@@ -2,6 +2,7 @@
+ import hashlib
+ import json
+ import tempfile
++from unittest.mock import patch
+ from datetime import date, timedelta
+ from decimal import Decimal
+ 
+@@ -26,7 +27,9 @@
+     BillingProfile,
+     DeviceActivation,
+     ProductEdition,
++    SaasTenant,
+ )
++from .saas_control import _signature, sync_tenant
+ from .security import hash_secret
+ from .services import recalculate_order
+ 
+@@ -123,6 +126,39 @@
+             status="pending",
+         )
+         self.client.force_login(self.user)
++
++
++class SaasControlPlaneTests(BillingFixture):
++    def test_signature_binds_method_path_timestamp_nonce_and_body(self):
++        signature = _signature("secret", "POST", "/api/platform/tenants", "1770000000", "nonce", b'{}')
++        self.assertNotEqual(
++            signature,
++            _signature("secret", "PATCH", "/api/platform/tenants", "1770000000", "nonce", b'{}'),
++        )
++        self.assertNotEqual(
++            signature,
++            _signature("secret", "POST", "/api/platform/tenants", "1770000000", "nonce", b'{"x":1}'),
++        )
++
++    @patch("billing_portal.saas_control.control_plane_request")
++    def test_new_tenant_is_provisioned_without_storing_service_secret(self, request):
++        request.return_value = {"ok": True, "business_id": 42}
++        tenant = SaasTenant.objects.create(
++            company=self.company,
++            code="defenzo",
++            plan_code="defenzo-free-year",
++            status="active",
++            user_limit=10,
++            modules=["dashboard", "billing", "inventory"],
++        )
++        sync_tenant(tenant)
++        tenant.refresh_from_db()
++        self.assertEqual(tenant.operational_business_id, 42)
++        self.assertEqual(tenant.sync_status, "synced")
++        method, path, payload = request.call_args.args
++        self.assertEqual((method, path), ("POST", "/api/platform/tenants"))
++        self.assertEqual(payload["user_limit"], 10)
++        self.assertFalse(hasattr(tenant, "secret"))
+ 
+ 
+ class PaymentTests(BillingFixture):
+--- a/config/settings.py
++++ b/config/settings.py
+@@ -211,3 +211,7 @@
+ BILLING_LICENSE_PRIVATE_KEY_FILE = os.getenv("BILLING_LICENSE_PRIVATE_KEY_FILE", "")
+ BILLING_LICENSE_PUBLIC_KEYS = os.getenv("BILLING_LICENSE_PUBLIC_KEYS", "{}")
+ BILLING_RELEASE_UPLOAD_TOKEN = os.getenv("BILLING_RELEASE_UPLOAD_TOKEN", "")
++AXEIN_SAAS_BASE_URL = os.getenv("AXEIN_SAAS_BASE_URL", "http://127.0.0.1:3200")
++AXEIN_SAAS_CONTROL_CLIENT = os.getenv("AXEIN_SAAS_CONTROL_CLIENT", "axein-control-room")
++AXEIN_SAAS_CONTROL_SECRET = os.getenv("AXEIN_SAAS_CONTROL_SECRET", "")
++AXEIN_SAAS_CONTROL_TIMEOUT_SECONDS = env_int("AXEIN_SAAS_CONTROL_TIMEOUT_SECONDS", 10)
+--- /dev/null
++++ b/billing_portal/saas_control.py
+@@ -0,0 +1,85 @@
++import base64
++import hashlib
++import hmac
++import json
++import secrets
++import time
++import urllib.error
++import urllib.request
++
++from django.conf import settings
++from django.utils import timezone
++
++
++class ControlPlaneError(RuntimeError):
++    pass
++
++
++def _signature(secret, method, path, timestamp, nonce, raw_body):
++    digest = hashlib.sha256(raw_body).hexdigest()
++    canonical = "\n".join((method.upper(), path, timestamp, nonce, digest)).encode()
++    signed = hmac.new(secret.encode(), canonical, hashlib.sha256).digest()
++    return base64.urlsafe_b64encode(signed).rstrip(b"=").decode()
++
++
++def control_plane_request(method, path, payload=None):
++    secret = settings.AXEIN_SAAS_CONTROL_SECRET.strip()
++    if not secret:
++        raise ControlPlaneError("AXEIN_SAAS_CONTROL_SECRET is not configured")
++    raw_body = b"" if payload is None else json.dumps(payload, separators=(",", ":")).encode()
++    timestamp = str(int(time.time()))
++    nonce = secrets.token_urlsafe(24)
++    headers = {
++        "Accept": "application/json",
++        "Content-Type": "application/json",
++        "X-AxEin-Client": settings.AXEIN_SAAS_CONTROL_CLIENT,
++        "X-AxEin-Timestamp": timestamp,
++        "X-AxEin-Nonce": nonce,
++        "X-AxEin-Signature": _signature(secret, method, path, timestamp, nonce, raw_body),
++    }
++    url = settings.AXEIN_SAAS_BASE_URL.rstrip("/") + path
++    request = urllib.request.Request(url, data=raw_body if method != "GET" else None, headers=headers, method=method)
++    try:
++        with urllib.request.urlopen(request, timeout=settings.AXEIN_SAAS_CONTROL_TIMEOUT_SECONDS) as response:
++            return json.loads(response.read().decode() or "{}")
++    except urllib.error.HTTPError as exc:
++        detail = exc.read().decode(errors="replace")[:500]
++        raise ControlPlaneError(f"SaaS returned HTTP {exc.code}: {detail}") from exc
++    except (urllib.error.URLError, TimeoutError) as exc:
++        raise ControlPlaneError(f"SaaS is unavailable: {exc}") from exc
++
++
++def sync_tenant(tenant):
++    company = tenant.company
++    payload = {
++        "code": tenant.code,
++        "name": company.legal_name,
++        "legal_name": company.legal_name,
++        "business_type": tenant.business_template,
++        "tenant_status": tenant.status,
++        "plan_code": tenant.plan_code,
++        "plan_status": tenant.status,
++        "starts_at": tenant.starts_at.isoformat() if tenant.starts_at else None,
++        "ends_at": tenant.ends_at.isoformat() if tenant.ends_at else None,
++        "user_limit": tenant.user_limit,
++        "modules": tenant.modules,
++    }
++    method = "PATCH" if tenant.operational_business_id else "POST"
++    if tenant.operational_business_id:
++        payload["business_id"] = tenant.operational_business_id
++    try:
++        result = control_plane_request(method, "/api/platform/tenants", payload)
++        if not tenant.operational_business_id:
++            tenant.operational_business_id = int(result["business_id"])
++        tenant.sync_status = "synced"
++        tenant.last_synced_at = timezone.now()
++        tenant.last_sync_error = ""
++        tenant.save(update_fields=("operational_business_id", "sync_status", "last_synced_at", "last_sync_error", "updated_at"))
++        return result
++    except (ControlPlaneError, KeyError, TypeError, ValueError) as exc:
++        tenant.sync_status = "failed"
++        tenant.last_sync_error = str(exc)[:2000]
++        tenant.save(update_fields=("sync_status", "last_sync_error", "updated_at"))
++        if isinstance(exc, ControlPlaneError):
++            raise
++        raise ControlPlaneError(f"Invalid SaaS response: {exc}") from exc
+--- /dev/null
++++ b/billing_portal/migrations/0007_saastenant.py
+@@ -0,0 +1,33 @@
++from django.db import migrations, models
++import django.db.models.deletion
++
++
++class Migration(migrations.Migration):
++    dependencies = [("billing_portal", "0006_alter_billingdocument_document_type")]
++    operations = [
++        migrations.CreateModel(
++            name="SaasTenant",
++            fields=[
++                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
++                ("created_at", models.DateTimeField(auto_now_add=True)),
++                ("updated_at", models.DateTimeField(auto_now=True)),
++                ("code", models.SlugField(max_length=80, unique=True)),
++                ("operational_business_id", models.PositiveBigIntegerField(blank=True, null=True, unique=True)),
++                ("plan_code", models.SlugField(default="standard", max_length=80)),
++                ("status", models.CharField(choices=[("draft", "Draft"), ("active", "Active"), ("read_only", "Read only"), ("suspended", "Suspended"), ("expired", "Expired")], default="draft", max_length=20)),
++                ("starts_at", models.DateTimeField(blank=True, null=True)),
++                ("ends_at", models.DateTimeField(blank=True, null=True)),
++                ("user_limit", models.PositiveIntegerField(default=5)),
++                ("modules", models.JSONField(blank=True, default=list)),
++                ("business_template", models.SlugField(default="automotive_detailing", max_length=80)),
++                ("read_only_after_expiry", models.BooleanField(default=True)),
++                ("integration_provider", models.SlugField(default="defenzo", max_length=40)),
++                ("integration_client_key", models.CharField(blank=True, max_length=120)),
++                ("sync_status", models.CharField(default="pending", max_length=30)),
++                ("last_synced_at", models.DateTimeField(blank=True, null=True)),
++                ("last_sync_error", models.TextField(blank=True)),
++                ("company", models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name="saas_tenant", to="billing_portal.billingcompany")),
++            ],
++            options={"ordering": ["company__legal_name"]},
++        )
++    ]
