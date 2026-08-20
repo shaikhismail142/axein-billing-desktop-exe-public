@@ -9,6 +9,8 @@ import LicenseBanner from "@/app/_components/LicenseBanner";
 import AlertsBell from "@/app/_components/AlertsBell";
 
 const PRINT_ROUTE_PREFIXES = [
+  "/login",
+  "/signup",
   "/reports/tax/print",
   "/api/invoices",
   "/api/quotations",
@@ -26,8 +28,8 @@ export default function ChromeShell({ children }: { children: React.ReactNode })
 
   if (hideChrome) {
     return (
-      <div className="min-h-dvh" style={{ background: "white", color: "#0f172a" }}>
-        <main id="main" className="p-6">
+      <div className="min-h-dvh" style={{ background: pathname?.startsWith("/login") ? "var(--bg)" : "white", color: pathname?.startsWith("/login") ? "var(--text)" : "#0f172a" }}>
+        <main id="main" className={pathname?.startsWith("/login") ? "min-h-dvh" : "p-6"}>
           {children}
         </main>
       </div>

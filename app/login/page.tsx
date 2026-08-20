@@ -56,9 +56,27 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="container">
-      <div className="card" style={{ maxWidth: 520, margin: "0 auto", padding: 16 }}>
-        <h1 style={{ margin: 0 }}>Sign In</h1>
+    <div className="relative grid min-h-dvh place-items-center overflow-hidden px-5 py-10">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(circle at 15% 15%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 34%), radial-gradient(circle at 85% 82%, color-mix(in oklab, #0f766e 18%, transparent), transparent 36%)",
+        }}
+      />
+      <div className="relative w-full" style={{ maxWidth: 480 }}>
+        <div className="mb-6 flex items-center justify-center gap-3">
+          <span className="ax-brand-badge" style={{ width: 42, height: 42 }}>AB</span>
+          <div>
+            <div className="text-xl font-semibold tracking-tight">AxEin Billing</div>
+            <div className="text-xs uppercase tracking-[0.2em] opacity-60">Defenzo Workspace</div>
+          </div>
+        </div>
+        <div className="card" style={{ padding: 28, boxShadow: "0 24px 70px color-mix(in oklab, var(--text) 14%, transparent)" }}>
+        <div className="mb-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "color-mix(in oklab, #0f766e 14%, transparent)", color: "#0f766e" }}>
+          Secure business portal
+        </div>
+        <h1 className="text-3xl font-semibold tracking-tight" style={{ margin: 0 }}>Welcome back</h1>
         <p className="muted" style={{ marginTop: 8 }}>
           {hostedPortal
             ? "AxEin Billing uses your connected business portal for secure sign-in."
@@ -66,12 +84,12 @@ export default function LoginPage() {
         </p>
 
         {hostedPortal ? (
-          <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
-            <a className="btn" href="https://defenzo.in/admin/">
-              Return to Defenzo
+          <div style={{ marginTop: 22, display: "grid", gap: 14 }}>
+            <a className="btn btn-primary" href="https://defenzo.in/admin/" style={{ minHeight: 48, justifyContent: "center" }}>
+              Continue with Defenzo
             </a>
             <p className="muted" style={{ margin: 0 }}>
-              Sign in to Defenzo, then select Invoice. You will not need a second password.
+              Sign in to Defenzo and select Invoice. Your authorized billing workspace will open automatically without another password.
             </p>
           </div>
         ) : <form onSubmit={submit} style={{ marginTop: 12, display: "grid", gap: 10 }}>
@@ -115,6 +133,8 @@ export default function LoginPage() {
         {!hostedPortal ? <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
           <a className="btn" href="/activate">Go to Activation</a>
         </div> : null}
+        </div>
+        <p className="mt-5 text-center text-xs opacity-60">Protected by AxEin secure sign-in</p>
       </div>
     </div>
   );
