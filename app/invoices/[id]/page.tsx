@@ -7,11 +7,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { pool } from "@/lib/db";
 import DownloadButton from "@/app/_components/DownloadButton";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 type Sale = {
   id: number;
   invoice_no: string | null;
   invoice_date: string | null;
+  issued_at: string | null;
   subtotal: number | null;
   tax_total: number | null;
   total: number | null;
@@ -66,7 +68,7 @@ export default async function InvoicePage({ params }: { params: { id: string } }
 
   // Header
   const saleRs = await pool.query(
-    `SELECT s.id, s.invoice_no, s.invoice_date, s.subtotal, s.tax_total, s.total,
+    `SELECT s.id, s.invoice_no, s.invoice_date, s.issued_at, s.subtotal, s.tax_total, s.total,
             COALESCE(s.amount_paid, (s.meta->>'amount_paid')::numeric, 0) AS amount_paid,
             COALESCE(s.pending_amount,
                      GREATEST(s.total - COALESCE(s.amount_paid, (s.meta->>'amount_paid')::numeric, 0), 0)) AS pending_amount,
@@ -139,12 +141,8 @@ export default async function InvoicePage({ params }: { params: { id: string } }
               ))}
             </div>
           )}
-          <p className="text-sm text-gray-600">
-            Date: {new Date(s.invoice_date ?? Date.now()).toLocaleString("en-IN", {
-              timeZone: "Asia/Kolkata",
-              hour12: true,
-            })}
-          </p>
+          <p className="text-sm text-gray-600">Document date: {formatDocumentDate(s.invoice_date)}</p>
+          <p className="text-sm text-gray-600">Issued at: {formatIssuedAtIST(s.issued_at)}</p>
         </div>
 
         <div className="document-detail-actions">

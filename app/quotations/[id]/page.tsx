@@ -4,6 +4,7 @@ import ConvertToSaleButton from "../_components/ConvertToSaleButton";
 import { notFound } from "next/navigation";
 import { pool } from "@/lib/db";
 import DownloadButton from "@/app/_components/DownloadButton";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,6 +28,7 @@ type Quotation = {
   id: number;
   quotation_number: string | null;
   quotation_date: string | null;
+  issued_at?: string | null;
   valid_until?: string | null;
   customer_id?: number | null;
   customer_name?: string | null;
@@ -34,7 +36,7 @@ type Quotation = {
 };
 
 const toNum = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
-const fmtDate = (v?: string | null) => (v ? new Date(v).toLocaleDateString("en-IN") : "");
+const fmtDate = (v?: string | null) => formatDocumentDate(v);
 const fmtINR = (n: number) => {
   const parts = n.toFixed(2).split(".");
   let x = parts[0];
@@ -166,9 +168,10 @@ export default async function Page({ params }: { params: { id: string } }) {
             Quotation {quotation.quotation_number ?? `#${quotation.id}`}
           </h1>
           <p className="muted text-sm">
-            Date: {fmtDate(quotation.quotation_date)}
+            Document date: {fmtDate(quotation.quotation_date)}
             {quotation.valid_until ? ` · Valid Until: ${fmtDate(quotation.valid_until)}` : ""}
           </p>
+          <p className="muted text-sm">Issued at: {formatIssuedAtIST(quotation.issued_at)}</p>
           {convertedSale ? (
             <p className="text-sm" style={{ marginTop: 6 }}>
               Converted to invoice:{" "}
@@ -251,7 +254,8 @@ export default async function Page({ params }: { params: { id: string } }) {
             <div>
               <div className="font-semibold mb-1">Details</div>
               <div>Quotation #: {quotation.quotation_number ?? `#${quotation.id}`}</div>
-              <div>Date: {fmtDate(quotation.quotation_date)}</div>
+              <div>Document date: {fmtDate(quotation.quotation_date)}</div>
+              <div>Issued at: {formatIssuedAtIST(quotation.issued_at)}</div>
               {quotation.valid_until && <div>Valid Until: {fmtDate(quotation.valid_until)}</div>}
             </div>
           </div>

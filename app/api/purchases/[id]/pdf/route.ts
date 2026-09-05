@@ -10,6 +10,7 @@ import { guardApiActivated } from "@/lib/activation-guard";
 import { registerPdfFonts } from "@/lib/pdfFonts";
 import { getRequestBusinessId } from "@/lib/platform-context";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 /* ---------- helpers ---------- */
 
@@ -164,7 +165,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         id,
         ${pCols.has("supplier_id") ? "supplier_id" : "NULL AS supplier_id"},
         ${invNoCol ? `${invNoCol} AS invoice_no` : "NULL AS invoice_no"},
-        ${dateCol ? `to_char(${dateCol}, 'YYYY-MM-DD') AS invoice_date` : "NULL AS invoice_date"},
+        ${dateCol ? `${dateCol} AS invoice_date` : "NULL AS invoice_date"},
+        ${pCols.has("issued_at") ? "issued_at" : (pCols.has("created_at") ? "created_at AS issued_at" : "now() AS issued_at")},
         ${pCols.has("meta") ? "meta" : "'{}'::jsonb AS meta"}
       FROM purchases
       WHERE id = $1${hasPurchasesBusiness ? " AND business_id = $2" : ""}
@@ -266,7 +268,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         doc.moveDown(0.2);
         infoRight("Voucher #", String(P.id));
         infoRight("Invoice No", String(P.invoice_no ?? "-"));
-        infoRight("Date", String(P.invoice_date ?? "-"));
+        infoRight("Document date", formatDocumentDate(P.invoice_date));
+        infoRight("Issued at", formatIssuedAtIST(P.issued_at));
 
         // Horizontal rule
         const hrY = Math.max(doc.y, y0) + 8;

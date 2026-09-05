@@ -73,6 +73,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         : "COALESCE(meta->>'payment_method', NULL) AS payment_method",
       pCols.has("meta") ? "meta" : "'{}'::jsonb AS meta",
       pCols.has("created_at") ? "created_at" : "now() AS created_at",
+      pCols.has("issued_at") ? "issued_at" : (pCols.has("created_at") ? "created_at AS issued_at" : "now() AS issued_at"),
     ].join(", ");
     const hdr = await client.query(
       `SELECT ${selectHdr}

@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -56,7 +57,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   } catch {}
 
   const qRs = await pool.query(
-    `SELECT q.id, q.quotation_number, q.quotation_date, q.valid_until,
+    `SELECT q.id, q.quotation_number, q.quotation_date, q.issued_at, q.valid_until,
             q.meta,
             c.name AS customer_name,
             c.phone AS customer_phone
@@ -166,7 +167,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
     <div style="margin-top:6px">
       <div><b>No:</b> ${escapeHtml(q.quotation_number ?? id)}</div>
-      <div><b>Date:</b> ${escapeHtml(fmtDate(q.quotation_date))}</div>
+      <div><b>Date:</b> ${escapeHtml(formatDocumentDate(q.quotation_date))}</div>
+      <div><b>Issued:</b> ${escapeHtml(formatIssuedAtIST(q.issued_at))}</div>
       ${q.valid_until ? `<div><b>Valid Until:</b> ${escapeHtml(fmtDate(q.valid_until))}</div>` : ""}
       <div><span class="badge">QUOTE</span></div>
     </div>

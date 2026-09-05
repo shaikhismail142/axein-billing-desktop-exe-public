@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -21,15 +22,6 @@ function escapeHtml(input: unknown) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function fmtDate(v?: any) {
-  if (!v) return "";
-  try {
-    return new Date(v).toLocaleDateString("en-IN");
-  } catch {
-    return String(v);
-  }
 }
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
@@ -157,7 +149,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
     <div style="margin-top:6px">
       <div><b>No:</b> ${escapeHtml(invoiceNo)}</div>
-      <div><b>Date:</b> ${escapeHtml(fmtDate(invoiceDate))}</div>
+      <div><b>Date:</b> ${escapeHtml(formatDocumentDate(invoiceDate))}</div>
+      <div><b>Issued:</b> ${escapeHtml(formatIssuedAtIST(p.issued_at ?? p.created_at))}</div>
       ${supplierName ? `<div><b>Supplier:</b> ${escapeHtml(supplierName)}</div>` : ""}
       <div><span class="badge">${escapeHtml(status)}</span></div>
     </div>

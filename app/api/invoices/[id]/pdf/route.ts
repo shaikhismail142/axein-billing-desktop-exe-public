@@ -4,6 +4,7 @@ import PDFDocument from "pdfkit";
 import fs from "node:fs";
 import path from "node:path";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ type Sale = {
   id: number;
   invoice_no: string | null;
   invoice_date: string | null;
+  issued_at?: string | null;
   subtotal: number | null;
   tax_total: number | null;
   total: number | null;
@@ -194,7 +196,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     : "";
   const customerFallbackFilter = !hasSalesBusiness && hasCustomerBusiness ? " and c.id is not null" : "";
   const saleRs = await pool.query(
-    `SELECT s.id, s.invoice_no, s.invoice_date, s.subtotal, s.tax_total, s.total,
+    `SELECT s.id, s.invoice_no, s.invoice_date, s.issued_at, s.subtotal, s.tax_total, s.total,
             COALESCE(s.amount_paid, (s.meta->>'amount_paid')::numeric, 0) AS amount_paid,
             COALESCE(s.pending_amount,
                      GREATEST(s.total - COALESCE(s.amount_paid, (s.meta->>'amount_paid')::numeric, 0), 0)) AS pending_amount,
@@ -358,14 +360,14 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       });
     }
     doc.text(
-      `Date: ${new Date(sale.invoice_date ?? Date.now()).toLocaleString("en-IN", {
-        timeZone: "Asia/Kolkata", hour12: true,
-        day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit",
-      })}`,
+      `Document date: ${formatDocumentDate(sale.invoice_date)}`,
       MARGIN + leftW,
       undefined,
       { width: rightW, align: "right", lineBreak: false }
     );
+    doc.text(`Issued at: ${formatIssuedAtIST(sale.issued_at)}`, MARGIN + leftW, undefined, {
+      width: rightW, align: "right", lineBreak: false,
+    });
     if (sale.patient_name) {
       doc.text(`Patient: ${sale.patient_name}`, MARGIN + leftW, undefined, {
         width: rightW, align: "right", lineBreak: false,
@@ -380,7 +382,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     // Ensure separator is **below** the taller block (text or logo)
     const approxLineH = 13.5; // baseline height heuristic
     const rightLines =
-      3 +
+      4 +
       (sale.dc_no ? 1 : 0) +
       (sale.patient_name ? 1 : 0) +
       (sale.doctor_name ? 1 : 0);

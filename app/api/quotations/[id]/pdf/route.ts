@@ -4,6 +4,7 @@ import { getRequestBusinessId } from "@/lib/platform-context";
 import PDFDocument from "pdfkit";
 import fs from "fs";
 import { requireAnyPermission } from "@/app/lib/request-access";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ type Quotation = {
   id: number;
   quotation_number: string | null;
   quotation_date: string | null;
+  issued_at?: string | null;
   valid_until: string | null;
   customer_id: number | null;
   customer_name: string | null;
@@ -71,7 +73,7 @@ const fmtAmt = (n: number) => {
   if (other) x = other.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + last3;
   return `${x}.${parts[1]}`;
 };
-const fmtDate = (v?: string | null) => (v ? new Date(v).toLocaleDateString("en-IN") : "-");
+const fmtDate = (v?: string | null) => formatDocumentDate(v);
 const fmtDateTime = (d = new Date()) =>
   d.toLocaleString("en-IN", { hour12: false }); // e.g., 27/09/2025, 16:35:12
 
@@ -282,12 +284,13 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   doc.font(boldFont || baseFont).fontSize(26).text("QUOTATION", margin, margin, { width: contentW - 220 });
   // Right meta box (also shows generation timestamp)
   const rightW = 210, rightX = margin + contentW - rightW, topY = margin;
-  doc.rect(rightX, topY, rightW, 86).strokeColor("#9ca3af").lineWidth(0.8).stroke();
+  doc.rect(rightX, topY, rightW, 100).strokeColor("#9ca3af").lineWidth(0.8).stroke();
   doc.font(baseFont).fontSize(10).fillColor("#111");
   doc.text(`No: ${q.quotation_number ?? q.id}`, rightX + 10, topY + 10, { width: rightW - 20, align: "right" });
-  doc.text(`Date: ${fmtDate(q.quotation_date)}`, rightX + 10, topY + 26, { width: rightW - 20, align: "right" });
-  doc.text(`Valid Until: ${fmtDate(q.valid_until)}`, rightX + 10, topY + 42, { width: rightW - 20, align: "right" });
-  doc.text(`Generated: ${fmtDateTime(genAt)}`, rightX + 10, topY + 58, { width: rightW - 20, align: "right" });
+  doc.text(`Document date: ${fmtDate(q.quotation_date)}`, rightX + 10, topY + 26, { width: rightW - 20, align: "right" });
+  doc.text(`Issued at: ${formatIssuedAtIST(q.issued_at)}`, rightX + 10, topY + 42, { width: rightW - 20, align: "right" });
+  doc.text(`Valid Until: ${fmtDate(q.valid_until)}`, rightX + 10, topY + 58, { width: rightW - 20, align: "right" });
+  doc.text(`Generated: ${fmtDateTime(genAt)}`, rightX + 10, topY + 74, { width: rightW - 20, align: "right" });
 
   // Company block
   const compX = margin, compY = margin + 34, compW = contentW - rightW - 12;

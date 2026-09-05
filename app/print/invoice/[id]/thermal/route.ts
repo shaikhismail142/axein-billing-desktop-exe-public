@@ -3,25 +3,12 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 function inr(n: number | string | null | undefined) {
   const v = Number(n ?? 0);
   const amt = v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `Rs ${amt}`;
-}
-
-function fmtDateIST(dt: string | Date | null | undefined) {
-  if (!dt) return "";
-  const d = new Date(dt);
-  return new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(d);
 }
 
 function escapeHtml(input: unknown) {
@@ -57,7 +44,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   } catch {}
 
   const saleRs = await pool.query(
-    `SELECT s.id, s.invoice_no, s.created_at, s.invoice_date,
+    `SELECT s.id, s.invoice_no, s.created_at, s.issued_at, s.invoice_date,
             s.subtotal, s.tax_total, s.total,
             COALESCE(s.amount_paid, (s.meta->>'amount_paid')::numeric, 0)   AS amount_paid,
             COALESCE(s.pending_amount,
@@ -154,7 +141,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
     <div style="margin-top:6px">
       <div><b>No:</b> ${escapeHtml(s.invoice_no ?? id)}</div>
-      <div><b>Date:</b> ${escapeHtml(fmtDateIST(displayDate))}</div>
+      <div><b>Date:</b> ${escapeHtml(formatDocumentDate(displayDate))}</div>
+      <div><b>Issued:</b> ${escapeHtml(formatIssuedAtIST(s.issued_at))}</div>
       <div><span class="badge">${escapeHtml(payStatus || "PENDING")}</span></div>
     </div>
 

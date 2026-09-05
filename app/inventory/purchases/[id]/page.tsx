@@ -6,6 +6,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getServerRequestContext } from "@/app/lib/server-request";
+import { formatDocumentDate, formatIssuedAtIST } from "@/app/lib/document-timestamp";
 
 async function getPurchase(ctx: ReturnType<typeof getServerRequestContext>, id: string) {
   const res = await fetch(`${ctx.baseUrl}/api/purchases/${id}`, { cache: "no-store", headers: ctx.authHeaders });
@@ -55,8 +56,9 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Purchase #{String(p.id)}</h1>
           <p className="text-sm text-[color:var(--muted)]">
-            Vendor: <b>{vendor}</b> · {payStatus} · Date: {date ? new Date(date).toLocaleDateString("en-IN") : "-"} · Total: <b>{asINR(total)}</b> · Outstanding: <b>{asINR(pendingAmt)}</b>
+            Vendor: <b>{vendor}</b> · {payStatus} · Document date: {formatDocumentDate(date)} · Total: <b>{asINR(total)}</b> · Outstanding: <b>{asINR(pendingAmt)}</b>
           </p>
+          <p className="text-sm text-[color:var(--muted)]">Issued at: {formatIssuedAtIST(p.issued_at)}</p>
         </div>
         <div className="flex gap-2">
           <Link href="/inventory/purchases" className="px-3 py-2 rounded-2xl border border-black/10 bg-[color:var(--surface-1)] hover:bg-[color:var(--surface-2)]">Back</Link>
